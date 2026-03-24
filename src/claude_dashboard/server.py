@@ -123,6 +123,8 @@ def format_date(iso_str):
 
 def collect_data():
     projects_data = []
+    if not PROJECTS_DIR.is_dir():
+        return projects_data
     for project_dir in sorted(PROJECTS_DIR.iterdir()):
         if not project_dir.is_dir():
             continue
@@ -199,7 +201,14 @@ class DashboardState:
             return self.data_json, self.version
 
 
-state = DashboardState()
+state = None
+
+
+def get_state():
+    global state
+    if state is None:
+        state = DashboardState()
+    return state
 
 
 def watcher_thread():
@@ -211,8 +220,8 @@ def watcher_thread():
             fp = get_dir_fingerprint()
             if fp != last_fp:
                 last_fp = fp
-                state.refresh()
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Data refreshed (v{state.get()[1]})")
+                get_state().refresh()
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Data refreshed (v{get_state().get()[1]})")
         except Exception as e:
             print(f"Watcher error: {e}")
 
@@ -722,7 +731,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(get_html().encode())
         elif self.path.startswith("/api/data"):
-            data_json, version = state.get()
+            data_json, version = get_state().get()
             response = json.dumps({"version": version, "data": json.loads(data_json)})
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
