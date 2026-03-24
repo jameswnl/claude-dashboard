@@ -8,6 +8,8 @@ A visual dashboard for browsing Claude Code projects, sessions, memory files, an
 
 Scans `~/.claude/projects/` and presents everything in a searchable web UI.
 
+![Claude Code Dashboard](./docs/claude-dashboard.png)
+
 ## Features
 
 - Browse all projects with session counts
