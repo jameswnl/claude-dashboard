@@ -144,20 +144,16 @@ def extract_sessions(project_path):
 def project_display_name(dirname):
     """Convert project dirname to readable path like ~/ws/jira.
 
-    Detects the home directory prefix (e.g. /Users/<user> or /home/<user>)
-    and replaces it with ~.
+    Uses dirname_to_path for accurate resolution (handles hyphenated dirs),
+    then replaces home directory prefix with ~.
     """
+    path = dirname_to_path(dirname)
     home = str(Path.home())
-    # dirname format: -Users-alice-ws-jira -> path /Users/alice/ws/jira
-    # We find where the home dir prefix ends in the dirname
-    home_prefix = "-" + home.lstrip("/").replace("/", "-")
-    if dirname.startswith(home_prefix):
-        rest = dirname[len(home_prefix):]
-        if not rest:
-            return "~"
-        # rest starts with "-", split into path components
-        return "~/" + rest.lstrip("-").replace("-", "/")
-    return dirname
+    if path == home:
+        return "~"
+    if path.startswith(home + "/"):
+        return "~" + path[len(home):]
+    return path
 
 
 def format_date(iso_str):

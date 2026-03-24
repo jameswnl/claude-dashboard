@@ -45,7 +45,7 @@ def test_project_display_name_deep_path():
 
 
 def test_project_display_name_unknown_prefix():
-    assert project_display_name("-other-random-path") == "-other-random-path"
+    assert project_display_name("-other-random-path") == "/other/random/path"
 
 
 # --- format_date ---
