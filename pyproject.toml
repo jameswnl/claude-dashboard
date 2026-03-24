@@ -3,6 +3,7 @@ name = "claude-dashboard"
 version = "0.1.0"
 description = "Visual dashboard for browsing Claude Code projects, sessions, and memory"
 requires-python = ">=3.10"
+license = "MIT"
 dependencies = []
 
 [project.scripts]
