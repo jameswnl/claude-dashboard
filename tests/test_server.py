@@ -7,15 +7,19 @@ from http.server import HTTPServer
 from claude_dashboard.server import (
     DashboardHandler,
     DashboardState,
+    get_state,
+)
+from claude_dashboard.data import (
     collect_data,
-    dirname_to_path,
     extract_memory_files,
     extract_sessions,
+    get_dir_fingerprint,
+)
+from claude_dashboard.ui import get_html
+from claude_dashboard.utils import (
+    dirname_to_path,
     find_claude_md,
     format_date,
-    get_dir_fingerprint,
-    get_html,
-    get_state,
     project_display_name,
     read_claude_md,
 )
@@ -235,14 +239,14 @@ def test_get_html_returns_valid_html():
 # --- get_dir_fingerprint ---
 
 def test_get_dir_fingerprint_returns_string(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     fp = get_dir_fingerprint()
     assert isinstance(fp, str)
     assert len(fp) == 32  # md5 hex digest
 
 
 def test_get_dir_fingerprint_changes_on_new_file(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     project = tmp_path / "test-project"
     project.mkdir()
 
@@ -253,7 +257,7 @@ def test_get_dir_fingerprint_changes_on_new_file(tmp_path, monkeypatch):
 
 
 def test_get_dir_fingerprint_detects_memory_change(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     project = tmp_path / "test-project"
     project.mkdir()
     mem_dir = project / "memory"
@@ -266,7 +270,7 @@ def test_get_dir_fingerprint_detects_memory_change(tmp_path, monkeypatch):
 
 
 def test_get_dir_fingerprint_skips_non_dirs(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     (tmp_path / "somefile.txt").write_text("not a dir")
     fp = get_dir_fingerprint()
     assert isinstance(fp, str)
@@ -292,13 +296,13 @@ def test_sessions_sorted_most_recent_first(tmp_path):
 # --- collect_data ---
 
 def test_collect_data_missing_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path / "nonexistent")
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "nonexistent")
     result = collect_data()
     assert result == []
 
 
 def test_collect_data_with_projects(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
 
     home_prefix = _home_prefix()
 
@@ -327,14 +331,14 @@ def test_collect_data_with_projects(tmp_path, monkeypatch):
 
 
 def test_collect_data_skips_files(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     (tmp_path / "not-a-dir.txt").write_text("file")
     result = collect_data()
     assert result == []
 
 
 def test_collect_data_includes_memory(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     proj = tmp_path / (_home_prefix() + "-ws-test")
     proj.mkdir()
     mem = proj / "memory"
@@ -349,7 +353,7 @@ def test_collect_data_includes_memory(tmp_path, monkeypatch):
 # --- DashboardState ---
 
 def test_dashboard_state(tmp_path, monkeypatch):
-    monkeypatch.setattr("claude_dashboard.server.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     s = DashboardState()
     data_json, version = s.get()
     assert version == 1
@@ -373,7 +377,7 @@ def test_dashboard_state(tmp_path, monkeypatch):
 
 def test_get_state_lazy_init(tmp_path, monkeypatch):
     import claude_dashboard.server as mod
-    monkeypatch.setattr(mod, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     monkeypatch.setattr(mod, "state", None)
     s = get_state()
     assert s is not None
@@ -385,7 +389,7 @@ def test_get_state_lazy_init(tmp_path, monkeypatch):
 
 def test_handler_serves_html(tmp_path, monkeypatch):
     import claude_dashboard.server as mod
-    monkeypatch.setattr(mod, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     monkeypatch.setattr(mod, "state", None)
 
     server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
@@ -402,7 +406,7 @@ def test_handler_serves_html(tmp_path, monkeypatch):
 
 def test_handler_serves_api_data(tmp_path, monkeypatch):
     import claude_dashboard.server as mod
-    monkeypatch.setattr(mod, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     monkeypatch.setattr(mod, "state", None)
 
     server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
@@ -421,7 +425,7 @@ def test_handler_serves_api_data(tmp_path, monkeypatch):
 
 def test_handler_404(tmp_path, monkeypatch):
     import claude_dashboard.server as mod
-    monkeypatch.setattr(mod, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     monkeypatch.setattr(mod, "state", None)
 
     server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
