@@ -19,6 +19,7 @@ packages = ["src/claude_dashboard"]
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=6.0",
 ]
 
 [tool.pytest.ini_options]

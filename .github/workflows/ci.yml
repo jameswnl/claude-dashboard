@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -13,4 +16,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv sync
-      - run: uv run pytest -v
+      - run: uv run pytest -v --cov=claude_dashboard --cov-report=term-missing --cov-report=json
+      - name: Generate coverage badge
+        if: github.ref == 'refs/heads/main'
+        uses: jaywcjlove/coverage-badges-cli@main
+        with:
+          source: coverage.json
+          output: coverage.svg
+      - name: Upload coverage badge
+        if: github.ref == 'refs/heads/main'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update coverage badge [skip ci]"
+          file_pattern: coverage.svg
