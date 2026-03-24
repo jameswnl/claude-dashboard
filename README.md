@@ -46,6 +46,17 @@ Or set the env var:
 export CLAUDE_PROJECTS_DIR=/path/to/projects
 ```
 
+## macOS Menu Bar App
+
+Optionally run as a menu bar app that manages the server:
+
+```bash
+uv sync --extra menubar
+uv run claude-dashboard-menubar
+```
+
+The menu bar icon (`C>_`) lets you start/stop the server and open the dashboard in your browser.
+
 ## Tests
 
 ```bash
@@ -54,6 +65,6 @@ uv run pytest
 
 ## How it works
 
-- Polls `~/.claude/projects/` every 3 seconds for file changes
+- Polls `~/.claude/projects/` every 10 minutes for file changes (manual refresh also available)
 - Browser auto-updates via polling `/api/data`
-- No external dependencies beyond Python stdlib
+- No external dependencies beyond Python stdlib (rumps optional for menu bar)

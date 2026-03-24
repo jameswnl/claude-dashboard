@@ -6,8 +6,12 @@ requires-python = ">=3.10"
 license = "MIT"
 dependencies = []
 
+[project.optional-dependencies]
+menubar = ["rumps>=0.4.0"]
+
 [project.scripts]
 claude-dashboard = "claude_dashboard.server:main"
+claude-dashboard-menubar = "claude_dashboard.menubar:main"
 
 [build-system]
 requires = ["hatchling"]
