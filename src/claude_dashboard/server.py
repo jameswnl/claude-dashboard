@@ -5,8 +5,11 @@ Serves the dashboard on http://localhost:8420 and auto-refreshes
 when files change in ~/.claude/projects/.
 
 Usage:
-    python3 claude-dashboard-server.py
-    python3 claude-dashboard-server.py --port 9000
+    claude-dashboard
+    claude-dashboard --port 9000
+    claude-dashboard --projects-dir /path/to/projects
+
+Set CLAUDE_PROJECTS_DIR env var to override the default projects directory.
 """
 
 import json
@@ -19,7 +22,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from datetime import datetime
 
-PROJECTS_DIR = Path.home() / ".claude" / "projects"
+PROJECTS_DIR = Path(os.environ.get("CLAUDE_PROJECTS_DIR", Path.home() / ".claude" / "projects"))
 DEFAULT_PORT = 8420
 POLL_INTERVAL = 3  # seconds
 
@@ -764,13 +767,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    global PROJECTS_DIR
     port = DEFAULT_PORT
     if len(sys.argv) > 1:
-        for i, arg in enumerate(sys.argv[1:]):
-            if arg == "--port" and i + 2 < len(sys.argv):
-                port = int(sys.argv[i + 2])
-            elif arg.isdigit():
-                port = int(arg)
+        args = sys.argv[1:]
+        i = 0
+        while i < len(args):
+            if args[i] == "--port" and i + 1 < len(args):
+                port = int(args[i + 1])
+                i += 2
+            elif args[i] == "--projects-dir" and i + 1 < len(args):
+                PROJECTS_DIR = Path(args[i + 1])
+                i += 2
+            elif args[i].isdigit():
+                port = int(args[i])
+                i += 1
+            else:
+                i += 1
 
     # Start file watcher
     t = threading.Thread(target=watcher_thread, daemon=True)

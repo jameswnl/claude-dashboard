@@ -31,10 +31,17 @@ uv sync
 uv run claude-dashboard
 ```
 
-Opens at http://localhost:8420. Custom port:
+Opens at http://localhost:8420. Options:
 
 ```bash
 uv run claude-dashboard --port 9000
+uv run claude-dashboard --projects-dir /path/to/projects
+```
+
+Or set the env var:
+
+```bash
+export CLAUDE_PROJECTS_DIR=/path/to/projects
 ```
 
 ## Tests
