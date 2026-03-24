@@ -1,7 +1,7 @@
 # Claude Code Dashboard
 
 [![CI](https://github.com/jameswnl/claude-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/jameswnl/claude-dashboard/actions/workflows/ci.yml)
-![Coverage](./coverage.svg)
+![Coverage](https://raw.githubusercontent.com/jameswnl/claude-dashboard/main/coverage.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A visual dashboard for browsing Claude Code projects, sessions, memory files, and CLAUDE.md configs.
