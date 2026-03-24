@@ -23,7 +23,7 @@ jobs:
         with:
           source: coverage.json
           output: coverage.svg
-          jsonPath: totals.percent_covered
+          jsonPath: totals.percent_covered_display
       - name: Upload coverage badge
         if: github.ref == 'refs/heads/main'
         uses: stefanzweifel/git-auto-commit-action@v5
