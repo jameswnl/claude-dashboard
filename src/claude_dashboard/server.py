@@ -576,10 +576,10 @@ def get_html():
 <div class="header">
   <h1><span class="live-dot"></span>Claude Code Dashboard</h1>
   <span class="stats" id="stats"></span>
-  <button class="refresh-btn" id="refresh" title="Refresh data">Refresh</button>
   <div class="search-bar">
     <input type="text" id="search" placeholder="Search projects, sessions, memory, CLAUDE.md..." autofocus>
   </div>
+  <button class="refresh-btn" id="refresh" title="Refresh data">Refresh</button>
 </div>
 
 <div class="container">
