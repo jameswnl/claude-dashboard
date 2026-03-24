@@ -6,3 +6,6 @@ dist/
 .python-version
 uv.lock
 .coverage
+coverage.json
+test-results/
+.pytest_cache/

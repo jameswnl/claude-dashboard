@@ -24,7 +24,7 @@ from datetime import datetime
 
 PROJECTS_DIR = Path(os.environ.get("CLAUDE_PROJECTS_DIR", Path.home() / ".claude" / "projects"))
 DEFAULT_PORT = 8420
-POLL_INTERVAL = 3  # seconds
+POLL_INTERVAL = 600  # seconds (10 minutes)
 
 
 # --- Data extraction (same as claude-dashboard.py) ---
@@ -538,6 +538,26 @@ def get_html():
   .project-card.show-claude-md .claude-md-section {
     display: block;
   }
+  .refresh-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .refresh-btn:hover {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .refresh-btn.loading {
+    opacity: 0.5;
+    pointer-events: none;
+  }
   .claude-md-content {
     font-size: 12px;
     color: var(--text-dim);
@@ -556,6 +576,7 @@ def get_html():
 <div class="header">
   <h1><span class="live-dot"></span>Claude Code Dashboard</h1>
   <span class="stats" id="stats"></span>
+  <button class="refresh-btn" id="refresh" title="Refresh data">Refresh</button>
   <div class="search-bar">
     <input type="text" id="search" placeholder="Search projects, sessions, memory, CLAUDE.md..." autofocus>
   </div>
@@ -716,27 +737,31 @@ searchInput.addEventListener('input', (e) => {
   render(e.target.value);
 });
 
-// Poll for updates
-async function checkForUpdates() {
-  try {
-    const resp = await fetch('/api/data?v=' + currentVersion);
-    const result = await resp.json();
-    if (result.version !== currentVersion) {
-      currentVersion = result.version;
-      DATA = result.data;
-      render(searchInput.value);
-    }
-  } catch (e) {}
-  setTimeout(checkForUpdates, 3000);
+async function fetchData() {
+  const resp = await fetch('/api/data');
+  const result = await resp.json();
+  if (result.version !== currentVersion) {
+    currentVersion = result.version;
+    DATA = result.data;
+    render(searchInput.value);
+  }
 }
 
-// Initial load
-fetch('/api/data').then(r => r.json()).then(result => {
-  currentVersion = result.version;
-  DATA = result.data;
-  render('');
-  setTimeout(checkForUpdates, 3000);
+// Manual refresh
+const refreshBtn = document.getElementById('refresh');
+refreshBtn.addEventListener('click', async () => {
+  refreshBtn.classList.add('loading');
+  refreshBtn.textContent = 'Refreshing...';
+  try {
+    await fetch('/api/refresh', { method: 'POST' });
+    await fetchData();
+  } catch (e) {}
+  refreshBtn.classList.remove('loading');
+  refreshBtn.textContent = 'Refresh';
 });
+
+// Initial load
+fetchData();
 </script>
 </body>
 </html>"""
@@ -758,6 +783,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(response.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/api/refresh":
+            get_state().refresh()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok": true}')
         else:
             self.send_response(404)
             self.end_headers()
