@@ -26,15 +26,24 @@ POLL_INTERVAL = 3  # seconds
 
 # --- Data extraction (same as claude-dashboard.py) ---
 
-def find_claude_md(dirname):
-    real_path = "/" + dirname.lstrip("-").replace("-", "/")
-    claude_md = Path(real_path) / "CLAUDE.md"
+def dirname_to_path(dirname):
+    """Convert a project dirname back to a filesystem path."""
+    return "/" + dirname.lstrip("-").replace("-", "/")
+
+
+def read_claude_md(path):
+    """Read a CLAUDE.md file, returning its content or None."""
+    claude_md = Path(path) / "CLAUDE.md"
     if claude_md.exists():
         try:
             return claude_md.read_text(errors="replace")[:8000]
         except Exception:
             return None
     return None
+
+
+def find_claude_md(dirname):
+    return read_claude_md(dirname_to_path(dirname))
 
 
 def extract_memory_files(project_path):
@@ -102,13 +111,22 @@ def extract_sessions(project_path):
 
 
 def project_display_name(dirname):
-    parts = [p for p in dirname.split("-") if p]
-    try:
-        idx = parts.index("jwong")
-        remaining = parts[idx + 1:]
-        return "~/" + "/".join(remaining) if remaining else "~"
-    except ValueError:
-        return dirname
+    """Convert project dirname to readable path like ~/ws/jira.
+
+    Detects the home directory prefix (e.g. /Users/<user> or /home/<user>)
+    and replaces it with ~.
+    """
+    home = str(Path.home())
+    # dirname format: -Users-alice-ws-jira -> path /Users/alice/ws/jira
+    # We find where the home dir prefix ends in the dirname
+    home_prefix = "-" + home.lstrip("/").replace("/", "-")
+    if dirname.startswith(home_prefix):
+        rest = dirname[len(home_prefix):]
+        if not rest:
+            return "~"
+        # rest starts with "-", split into path components
+        return "~/" + rest.lstrip("-").replace("-", "/")
+    return dirname
 
 
 def format_date(iso_str):
