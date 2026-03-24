@@ -14,6 +14,8 @@ Set CLAUDE_PROJECTS_DIR env var to override the default projects directory.
 
 import json
 import os
+import shlex
+import subprocess
 import sys
 import time
 import threading
@@ -30,8 +32,34 @@ POLL_INTERVAL = 600  # seconds (10 minutes)
 # --- Data extraction (same as claude-dashboard.py) ---
 
 def dirname_to_path(dirname):
-    """Convert a project dirname back to a filesystem path."""
-    return "/" + dirname.lstrip("-").replace("-", "/")
+    """Convert a project dirname back to a filesystem path.
+
+    Handles ambiguity where '-' could be a path separator or a literal hyphen
+    by probing the filesystem to find the correct path.
+    """
+    parts = dirname.lstrip("-").split("-")
+    if not parts:
+        return "/"
+
+    # Try greedy filesystem probing: at each step, try joining with hyphen
+    # to match directories that contain hyphens in their names.
+    path = Path("/")
+    i = 0
+    while i < len(parts):
+        # Try longest hyphenated match first
+        matched = False
+        for j in range(len(parts), i, -1):
+            candidate = "-".join(parts[i:j])
+            if (path / candidate).exists():
+                path = path / candidate
+                i = j
+                matched = True
+                break
+        if not matched:
+            # No match found, just use the single part
+            path = path / parts[i]
+            i += 1
+    return str(path)
 
 
 def read_claude_md(path):
@@ -440,6 +468,21 @@ def get_html():
     color: var(--text);
     line-height: 1.4;
   }
+  .resume-btn {
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--accent2);
+    background: transparent;
+    color: var(--accent2);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .resume-btn:hover {
+    background: var(--accent2);
+    color: var(--bg);
+  }
   .session-all-messages .msg:last-child {
     border-bottom: none;
   }
@@ -661,6 +704,7 @@ function render(query) {
             <div class="session-meta">
               <span class="session-date">${escapeHtml(s.started)}</span>
               <span class="session-msgs">${s.message_count} message${s.message_count !== 1 ? 's' : ''}</span>
+              <button class="resume-btn" data-session-id="${escapeHtml(s.id)}" data-dirname="${escapeHtml(project.dirname)}">Resume</button>
             </div>
             <div class="session-preview">${highlightText(s.first_message, q)}</div>
             <div class="session-all-messages">
@@ -710,6 +754,27 @@ function render(query) {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         el.classList.toggle('show-messages');
+      });
+    });
+
+    card.querySelectorAll('.resume-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const sessionId = btn.dataset.sessionId;
+        const dirname = btn.dataset.dirname;
+        btn.textContent = 'Opening...';
+        try {
+          const resp = await fetch('/api/resume', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sessionId, dirname: dirname})
+          });
+          const result = await resp.json();
+          if (!result.ok) alert('Failed to open terminal: ' + (result.error || 'unknown error'));
+        } catch (err) {
+          alert('Failed to resume session: ' + err.message);
+        }
+        btn.textContent = 'Resume';
       });
     });
 
@@ -767,6 +832,53 @@ fetchData();
 </html>"""
 
 
+# --- Terminal launch ---
+
+def open_terminal_with_session(session_id, dirname):
+    """Open a terminal and run 'claude --resume <session_id>' in the project dir."""
+    project_path = dirname_to_path(dirname)
+    if Path(project_path).is_dir():
+        cmd = f"cd {shlex.quote(project_path)} && claude --resume {shlex.quote(session_id)}"
+    else:
+        # Path may have hyphens that were ambiguously encoded; resume without cd
+        cmd = f"claude --resume {shlex.quote(session_id)}"
+
+    # Try iTerm2 first, fall back to Terminal.app
+    iterm_script = f'''
+        tell application "iTerm"
+            activate
+            set newWindow to (create window with default profile)
+            tell current session of newWindow
+                write text {json.dumps(cmd)}
+            end tell
+        end tell
+    '''
+    terminal_script = f'''
+        tell application "Terminal"
+            activate
+            do script {json.dumps(cmd)}
+        end tell
+    '''
+
+    try:
+        subprocess.run(
+            ["osascript", "-e", iterm_script],
+            capture_output=True, timeout=5
+        )
+        return {"ok": True}
+    except Exception:
+        pass
+
+    try:
+        subprocess.run(
+            ["osascript", "-e", terminal_script],
+            capture_output=True, timeout=5
+        )
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # --- HTTP Server ---
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -794,6 +906,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(b'{"ok": true}')
+        elif self.path == "/api/resume":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(content_length))
+            session_id = body.get("session_id", "")
+            dirname = body.get("dirname", "")
+            result = open_terminal_with_session(session_id, dirname)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
         else:
             self.send_response(404)
             self.end_headers()

@@ -18,6 +18,7 @@ Scans `~/.claude/projects/` and presents everything in a searchable web UI.
 - Full-text search across project names, session messages, memory, and CLAUDE.md
 - Auto-highlights search matches
 - Live auto-refresh when files change
+- Resume any session directly from the dashboard (opens iTerm2 or Terminal)
 
 ## Setup
 
