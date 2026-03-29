@@ -417,7 +417,7 @@ def test_handler_serves_html(tmp_path, monkeypatch):
     t = threading.Thread(target=server.handle_request, daemon=True)
     t.start()
 
-    resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/")
+    resp = _auth_request(f"http://127.0.0.1:{port}/", headers={"Cookie": f"dashboard_token={AUTH_TOKEN}"})
     body = resp.read().decode()
     assert resp.status == 200
     assert "Claude Code Dashboard" in body
@@ -1614,8 +1614,8 @@ def test_api_rejects_wrong_token(tmp_path, monkeypatch):
     server.server_close()
 
 
-def test_html_page_no_auth_needed(tmp_path, monkeypatch):
-    """The HTML page should be served without auth (it contains the token)."""
+def test_html_page_requires_auth(tmp_path, monkeypatch):
+    """The HTML page should reject unauthenticated requests."""
     import claude_dashboard.server as mod
     monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     monkeypatch.setattr(mod, "state", None)
@@ -1625,10 +1625,44 @@ def test_html_page_no_auth_needed(tmp_path, monkeypatch):
     t = threading.Thread(target=server.handle_request, daemon=True)
     t.start()
 
-    resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/")
-    body = resp.read().decode()
-    assert resp.status == 200
-    assert AUTH_TOKEN in body
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/")
+        assert False, "Should have raised 401"
+    except urllib.error.HTTPError as e:
+        assert e.code == 401
+    server.server_close()
+
+
+def test_html_page_token_url_sets_cookie(tmp_path, monkeypatch):
+    """GET /?token=<valid> should redirect and set a cookie."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    # Don't follow redirects
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
+
+    opener = urllib.request.build_opener(NoRedirect)
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/?token={AUTH_TOKEN}",
+        headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
+    )
+    try:
+        opener.open(req)
+        assert False, "Should have raised redirect"
+    except urllib.error.HTTPError as e:
+        assert e.code == 302
+        cookie_header = e.headers.get("Set-Cookie", "")
+        assert "dashboard_token=" in cookie_header
+        assert "HttpOnly" in cookie_header
+        assert "SameSite=Strict" in cookie_header
     server.server_close()
 
 
@@ -1684,3 +1718,97 @@ def test_get_html_includes_auth_token():
     html = get_html("test-secret-token")
     assert "test-secret-token" in html
     assert "AUTH_TOKEN" in html
+
+
+# --- Host and Origin validation tests ---
+
+def test_rejects_invalid_host_header(tmp_path, monkeypatch):
+    """Requests with non-localhost Host header should be rejected with 403."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/",
+        headers={"Host": "evil.com", "Authorization": f"Bearer {AUTH_TOKEN}"},
+    )
+    try:
+        urllib.request.urlopen(req)
+        assert False, "Should have raised 403"
+    except urllib.error.HTTPError as e:
+        assert e.code == 403
+    server.server_close()
+
+
+def test_rejects_invalid_origin_on_post(tmp_path, monkeypatch):
+    """POST with non-localhost Origin header should be rejected with 403."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/refresh",
+        method="POST",
+        data=b"",
+        headers={
+            "Authorization": f"Bearer {AUTH_TOKEN}",
+            "Origin": "https://evil.com",
+        },
+    )
+    try:
+        urllib.request.urlopen(req)
+        assert False, "Should have raised 403"
+    except urllib.error.HTTPError as e:
+        assert e.code == 403
+    server.server_close()
+
+
+def test_allows_localhost_origin_on_post(tmp_path, monkeypatch):
+    """POST with localhost Origin header should be allowed."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    resp = _auth_request(
+        f"http://127.0.0.1:{port}/api/refresh",
+        method="POST",
+        data=b"",
+        headers={"Origin": f"http://localhost:{port}"},
+    )
+    body = json.loads(resp.read())
+    assert resp.status == 200
+    assert body["ok"] is True
+    server.server_close()
+
+
+def test_allows_no_origin_on_post(tmp_path, monkeypatch):
+    """POST without Origin header should be allowed (non-browser clients)."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    resp = _auth_request(f"http://127.0.0.1:{port}/api/refresh", method="POST", data=b"")
+    body = json.loads(resp.read())
+    assert resp.status == 200
+    assert body["ok"] is True
+    server.server_close()

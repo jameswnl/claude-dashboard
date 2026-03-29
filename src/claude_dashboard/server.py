@@ -108,22 +108,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def _check_auth(self):
-        """Verify per-launch auth token from query string or header."""
-        # Check query string: /api/data?token=...
-        token = None
+    def _get_token(self):
+        """Extract auth token from Authorization header, cookie, or query string."""
+        # Authorization header (used by JS fetch)
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[7:]
+        # Cookie (set after initial auth via token URL)
+        cookie = self.headers.get("Cookie", "")
+        for part in cookie.split(";"):
+            part = part.strip()
+            if part.startswith("dashboard_token="):
+                return part[16:]
+        # Query string: /?token=... (initial browser open)
         if "?" in self.path:
-            path, qs = self.path.split("?", 1)
-            for param in qs.split("&"):
+            for param in self.path.split("?", 1)[1].split("&"):
                 if param.startswith("token="):
-                    token = param[6:]
-                    break
-        # Also accept Authorization header
-        if not token:
-            auth = self.headers.get("Authorization", "")
-            if auth.startswith("Bearer "):
-                token = auth[7:]
-        if token != AUTH_TOKEN:
+                    return param[6:]
+        return None
+
+    def _check_auth(self):
+        """Verify per-launch auth token."""
+        if self._get_token() != AUTH_TOKEN:
             self.send_response(401)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -165,7 +171,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._check_host():
             return
-        if self.path == "/" or self.path == "/index.html":
+        base_path = self.path.split("?")[0]
+        if base_path == "/" or base_path == "/index.html":
+            if not self._check_auth():
+                return
+            # If token came via query string, set cookie and redirect to clean URL
+            if "?" in self.path and "token=" in self.path:
+                self.send_response(302)
+                self.send_header("Location", "/")
+                self.send_header("Set-Cookie", f"dashboard_token={AUTH_TOKEN}; HttpOnly; SameSite=Strict; Path=/")
+                self.end_headers()
+                return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
@@ -248,14 +264,14 @@ def main():
     t.start()
 
     server = HTTPServer(("127.0.0.1", port), DashboardHandler)
-    print(f"Claude Code Dashboard running at http://localhost:{port}")
-    print(f"Auth token: {AUTH_TOKEN}")
+    dashboard_url = f"http://localhost:{port}/?token={AUTH_TOKEN}"
+    print(f"Claude Code Dashboard running at {dashboard_url}")
     print(f"Watching {_data.PROJECTS_DIR} for changes (every {POLL_INTERVAL}s)")
     print("Press Ctrl+C to stop\n")
 
     try:
         import webbrowser
-        webbrowser.open(f"http://localhost:{port}")
+        webbrowser.open(dashboard_url)
     except Exception:
         pass
 
