@@ -1222,6 +1222,7 @@ def test_main_port_flag(tmp_path, monkeypatch):
 
     monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
     monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
 
     from claude_dashboard.server import main
     main()
@@ -1246,6 +1247,7 @@ def test_main_projects_dir_flag(tmp_path, monkeypatch):
 
     monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
     monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
 
     from claude_dashboard.server import main
     main()
@@ -1271,6 +1273,7 @@ def test_main_positional_port(tmp_path, monkeypatch):
 
     monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
     monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
 
     from claude_dashboard.server import main
     main()
@@ -1296,6 +1299,7 @@ def test_main_unknown_arg(tmp_path, monkeypatch):
 
     monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
     monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
 
     from claude_dashboard.server import main
     main()
