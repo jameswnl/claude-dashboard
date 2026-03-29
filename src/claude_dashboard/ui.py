@@ -447,6 +447,26 @@ def get_html():
   .skills-group-header:hover {
     background: var(--surface2);
   }
+  .source-link {
+    font-size: 11px;
+    color: var(--accent2);
+    text-decoration: none;
+    border: 1px solid var(--accent2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 8px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .source-link:hover {
+    background: var(--accent2);
+    color: var(--bg);
+  }
+  .plugin-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 400;
+    margin-left: 8px;
+  }
   .skills-group-count {
     background: var(--surface2);
     color: var(--text-dim);
@@ -837,9 +857,11 @@ function renderSkills(query) {
     SKILLS.plugins.forEach(p => {
       const items = renderSkillGroup(p.name, p.skills, q);
       if (items || !hasQuery) {
+        const sourceLink = p.source_url ? `<a href="${escapeHtml(p.source_url)}" target="_blank" class="source-link" title="${escapeHtml(p.source_url)}">source</a>` : '';
+        const desc = p.description ? `<span class="plugin-desc">${escapeHtml(p.description)}</span>` : '';
         pluginsHtml += `<div class="skills-group">
           <div class="skills-group-header">
-            <span>${highlightText(p.name, q)}</span>
+            <span>${highlightText(p.name, q)} ${sourceLink} ${desc}</span>
             <span class="skills-group-count">${p.skills.length} skill${p.skills.length !== 1 ? 's' : ''}</span>
           </div>
           <div class="skills-group-body">${items || renderSkillGroup(p.name, p.skills, '')}</div>

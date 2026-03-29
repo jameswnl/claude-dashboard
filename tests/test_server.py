@@ -11,6 +11,7 @@ from claude_dashboard.server import (
 )
 from claude_dashboard.data import (
     _extract_commands_from_dir,
+    _extract_plugin_meta,
     _read_skill_file,
     collect_all_skills,
     collect_data,
@@ -1026,3 +1027,57 @@ def test_handler_log_message_suppressed(tmp_path, monkeypatch):
     handler = DashboardHandler.__new__(DashboardHandler)
     # Should not raise
     handler.log_message("test %s", "msg")
+
+
+# --- _extract_plugin_meta ---
+
+def test_extract_plugin_meta_no_readme(tmp_path):
+    plugin_dir = tmp_path / "my-plugin"
+    plugin_dir.mkdir()
+    meta = _extract_plugin_meta(plugin_dir)
+    assert meta["name"] == "my-plugin"
+    assert "source_url" not in meta
+    assert "description" not in meta
+
+
+def test_extract_plugin_meta_with_readme(tmp_path):
+    plugin_dir = tmp_path / "cool-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "README.md").write_text(
+        "# Cool Plugin\n\nA useful tool for coding.\n\n"
+        "Source: https://github.com/user/cool-plugin\n"
+    )
+    meta = _extract_plugin_meta(plugin_dir)
+    assert meta["name"] == "cool-plugin"
+    assert meta["source_url"] == "https://github.com/user/cool-plugin"
+    assert meta["description"] == "Cool Plugin"
+
+
+def test_extract_plugin_meta_no_github_url(tmp_path):
+    plugin_dir = tmp_path / "local-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "README.md").write_text("# Local Plugin\n\nNo external source.")
+    meta = _extract_plugin_meta(plugin_dir)
+    assert meta["name"] == "local-plugin"
+    assert "source_url" not in meta
+    assert meta["description"] == "Local Plugin"
+
+
+def test_collect_all_skills_plugins_include_meta(tmp_path, monkeypatch):
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    plugin_dir = claude_dir / "plugins" / "marketplaces" / "official" / "plugins" / "test-plugin"
+    commands_dir = plugin_dir / "commands"
+    commands_dir.mkdir(parents=True)
+    (commands_dir / "do-thing.md").write_text("Skill content")
+    (plugin_dir / "README.md").write_text(
+        "# Test Plugin\n\nDoes things.\nhttps://github.com/user/test-plugin\n"
+    )
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_all_skills()
+    plugin = result["plugins"][0]
+    assert plugin["name"] == "test-plugin"
+    assert plugin["marketplace"] == "official"
+    assert plugin["source_url"] == "https://github.com/user/test-plugin"
+    assert plugin["description"] == "Test Plugin"

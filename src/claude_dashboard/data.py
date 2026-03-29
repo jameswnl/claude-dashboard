@@ -84,6 +84,29 @@ def _read_skill_file(filepath):
         return None
 
 
+def _extract_plugin_meta(plugin_dir):
+    """Extract metadata from a plugin directory (README, source URL)."""
+    import re
+    meta = {"name": plugin_dir.name}
+    readme = plugin_dir / "README.md"
+    if readme.exists():
+        try:
+            text = readme.read_text(errors="replace")[:5000]
+            # Extract first GitHub URL as source
+            urls = re.findall(r'https://github\.com/[^\s)"\]]+', text)
+            if urls:
+                meta["source_url"] = urls[0]
+            # Extract first line as description
+            for line in text.splitlines():
+                line = line.strip().lstrip("#").strip()
+                if line and not line.startswith("[") and not line.startswith("!"):
+                    meta["description"] = line[:200]
+                    break
+        except Exception:
+            pass
+    return meta
+
+
 def _extract_commands_from_dir(commands_dir):
     """Extract skill files from a commands directory."""
     skills = []
@@ -142,10 +165,10 @@ def collect_all_skills():
                 if commands_dir.is_dir():
                     skills = _extract_commands_from_dir(commands_dir)
                     if skills:
-                        result["plugins"].append({
-                            "name": plugin_dir.name,
-                            "skills": skills,
-                        })
+                        meta = _extract_plugin_meta(plugin_dir)
+                        meta["marketplace"] = marketplace.name
+                        meta["skills"] = skills
+                        result["plugins"].append(meta)
 
     return result
 
