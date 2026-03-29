@@ -16,6 +16,7 @@ Scans `~/.claude/projects/` and presents everything in a searchable web UI.
 - Expand projects to see session history and first messages
 - View memory files and CLAUDE.md per project
 - Browse skills/commands from user, project, and plugin sources
+- View MCP server configurations (user-level and per-project, with secrets masked)
 - Full-text search with case-sensitive and full-word match options
 - Auto-highlights search matches
 - Resume any session directly from the dashboard (opens iTerm2 or Terminal)
