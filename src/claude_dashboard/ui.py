@@ -140,6 +140,7 @@ def get_html():
   .project-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    grid-auto-rows: min-content;
     gap: 16px;
   }
   .project-card {
@@ -180,6 +181,8 @@ def get_html():
   .project-sessions {
     display: none;
     border-top: 1px solid var(--border);
+    max-height: 600px;
+    overflow-y: auto;
   }
   .project-card.expanded .project-sessions {
     display: block;
