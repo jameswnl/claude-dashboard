@@ -1322,3 +1322,49 @@ def test_main_webbrowser_exception(tmp_path, monkeypatch):
 
     from claude_dashboard.server import main
     main()  # Should not raise
+
+
+# --- Deduplication: user-level skills not duplicated in project skills ---
+
+def test_collect_all_skills_deduplicates_home_project(tmp_path, monkeypatch):
+    """Skills from ~/.claude/commands/ should not appear in project skills for ~ project."""
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    commands = claude_dir / "commands"
+    commands.mkdir()
+    (commands / "my-cmd.md").write_text("User command")
+
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+
+    # Create a project entry whose path resolves to tmp_path (simulating home dir)
+    # The project's .claude/commands is the same as user-level commands
+    parts = str(tmp_path).lstrip("/").split("/")
+    project_dirname = "-" + "-".join(parts)
+    (projects_dir / project_dirname).mkdir()
+
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", projects_dir)
+
+    result = collect_all_skills()
+    assert len(result["user"]) == 1
+    assert result["projects"] == []  # Should not duplicate
+
+
+def test_extract_project_skills_skips_user_commands(tmp_path, monkeypatch):
+    """extract_project_skills should return [] if commands dir matches user-level."""
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    commands = claude_dir / "commands"
+    commands.mkdir()
+    (commands / "skill.md").write_text("content")
+
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+
+    # Build dirname that resolves to tmp_path
+    parts = str(tmp_path).lstrip("/").split("/")
+    dirname = "-" + "-".join(parts)
+
+    from claude_dashboard.data import extract_project_skills
+    result = extract_project_skills(dirname)
+    assert result == []

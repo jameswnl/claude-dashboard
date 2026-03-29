@@ -121,9 +121,16 @@ def _extract_commands_from_dir(commands_dir):
 
 
 def extract_project_skills(project_dirname):
-    """Extract skills from a project's .claude/commands/ directory."""
+    """Extract skills from a project's .claude/commands/ directory.
+
+    Skips if the commands dir is the same as the user-level commands dir
+    (e.g. when the project is the home directory).
+    """
     project_path = dirname_to_path(project_dirname)
     commands_dir = Path(project_path) / ".claude" / "commands"
+    user_commands = CLAUDE_DIR / "commands"
+    if commands_dir.resolve() == user_commands.resolve():
+        return []
     return _extract_commands_from_dir(commands_dir)
 
 
@@ -143,6 +150,9 @@ def collect_all_skills():
                 continue
             project_path = dirname_to_path(project_dir.name)
             commands_dir = Path(project_path) / ".claude" / "commands"
+            # Skip if same as user-level commands (e.g. home dir project)
+            if commands_dir.resolve() == user_commands.resolve():
+                continue
             if commands_dir.is_dir() and project_path not in seen:
                 seen.add(project_path)
                 skills = _extract_commands_from_dir(commands_dir)
