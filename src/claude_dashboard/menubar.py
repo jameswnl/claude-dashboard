@@ -71,23 +71,16 @@ class DashboardApp(rumps.App):
         stopped = False
         if SERVER_PROCESS and SERVER_PROCESS.poll() is None:
             SERVER_PROCESS.terminate()
-            SERVER_PROCESS.wait(timeout=5)
+            try:
+                SERVER_PROCESS.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                SERVER_PROCESS.kill()
             SERVER_PROCESS = None
             stopped = True
-        # Also kill any other process listening on the port
-        try:
-            result = subprocess.run(
-                ["lsof", "-ti", f"tcp:{PORT}"],
-                capture_output=True, text=True
-            )
-            for pid in result.stdout.strip().split("\n"):
-                if pid:
-                    subprocess.run(["kill", pid])
-                    stopped = True
-        except Exception:
-            pass
         if stopped:
             rumps.notification("Claude Dashboard", "", "Server stopped")
+        else:
+            rumps.notification("Claude Dashboard", "", "No server process to stop")
         self._update_status()
 
 
