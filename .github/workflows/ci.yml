@@ -7,26 +7,36 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
       - run: uv sync
       - run: uv run pytest -v --cov=claude_dashboard --cov-report=term-missing --cov-report=json
+
+  badge:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - run: uv sync
+      - run: uv run pytest --cov=claude_dashboard --cov-report=json -q
       - name: Generate coverage badge
-        if: github.ref == 'refs/heads/main'
-        uses: jaywcjlove/coverage-badges-cli@main
+        uses: jaywcjlove/coverage-badges-cli@bf674c37089a81fa99d870491468e8e3a4bb7ed4 # main
         with:
           source: coverage.json
           output: coverage.svg
           jsonPath: totals.percent_covered_display
       - name: Upload coverage badge
-        if: github.ref == 'refs/heads/main'
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5
         with:
           commit_message: "Update coverage badge [skip ci]"
           file_pattern: coverage.svg
