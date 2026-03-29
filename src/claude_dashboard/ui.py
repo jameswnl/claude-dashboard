@@ -342,6 +342,13 @@ def get_html():
   .project-card.show-skills .project-skills-section {
     display: block;
   }
+  .project-mcp-section {
+    display: none;
+    border-top: 1px solid var(--border);
+  }
+  .project-card.show-mcp .project-mcp-section {
+    display: block;
+  }
   .refresh-btn {
     padding: 8px 16px;
     border-radius: 8px;
@@ -561,6 +568,32 @@ def get_html():
     font-family: 'SF Mono', 'Fira Code', monospace;
     word-break: break-all;
   }
+  .mcp-server-config {
+    display: none;
+    margin-top: 6px;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .mcp-server.expanded .mcp-server-config {
+    display: block;
+  }
+  .mcp-server-name {
+    cursor: pointer;
+  }
+  .mcp-server-name:hover {
+    color: var(--accent);
+  }
+  .mcp-config-key {
+    color: var(--accent2);
+  }
+  .mcp-config-masked {
+    opacity: 0.6;
+  }
 </style>
 </head>
 <body>
@@ -675,13 +708,18 @@ function render(query) {
       s => searchMatch(s.name, q) || searchMatch(s.content, q)
     );
 
-    if (!nameMatch && matchingSessions.length === 0 && !memoryMatch && !claudeMdMatch && !skillsMatch) return;
+    const mcpMatch = hasQuery && project.mcp_servers && project.mcp_servers.some(
+      s => searchMatch(s.name, q) || searchMatch(s.url || '', q) || searchMatch(s.command || '', q)
+    );
+
+    if (!nameMatch && matchingSessions.length === 0 && !memoryMatch && !claudeMdMatch && !skillsMatch && !mcpMatch) return;
     visibleCount++;
 
     const sessionsToShow = hasQuery ? matchingSessions : project.sessions;
     const hasMemory = project.memory_files && project.memory_files.length > 0;
     const hasClaudeMd = !!project.claude_md;
     const hasSkills = project.skills && project.skills.length > 0;
+    const hasMcp = project.mcp_servers && project.mcp_servers.length > 0;
 
     const card = document.createElement('div');
     card.className = 'project-card';
@@ -694,6 +732,7 @@ function render(query) {
         ${hasMemory ? '<button class="tab-btn" data-tab="memory">Memory (' + project.memory_files.length + ')</button>' : ''}
         ${hasClaudeMd ? '<button class="tab-btn" data-tab="claude-md">CLAUDE.md</button>' : ''}
         ${hasSkills ? '<button class="tab-btn" data-tab="skills">Skills (' + project.skills.length + ')</button>' : ''}
+        ${hasMcp ? '<button class="tab-btn" data-tab="mcp">MCP (' + project.mcp_servers.length + ')</button>' : ''}
       </div>
       <div class="project-sessions">
         ${sessionsToShow.map((s, si) => `
@@ -729,11 +768,28 @@ function render(query) {
           </div>
         `).join('')}
       </div>` : ''}
+      ${hasMcp ? `<div class="project-mcp-section">
+        ${project.mcp_servers.map(s => {
+          const detail = s.url ? s.url : s.command ? (Array.isArray(s.args) ? s.command + ' ' + s.args.join(' ') : s.command) : '';
+          let configLines = [];
+          if (s.headers) {
+            Object.entries(s.headers).forEach(([k, v]) => {
+              configLines.push('<span class="mcp-config-key">' + escapeHtml(k) + '</span>: ' + (String(v).includes('****') ? '<span class="mcp-config-masked">' + escapeHtml(v) + '</span>' : escapeHtml(v)));
+            });
+          }
+          if (s.env) {
+            Object.entries(s.env).forEach(([k, v]) => {
+              configLines.push('<span class="mcp-config-key">' + escapeHtml(k) + '</span>=' + '<span class="mcp-config-masked">' + escapeHtml(v) + '</span>');
+            });
+          }
+          return '<div class="mcp-server"><span class="mcp-server-name">' + highlightText(s.name, q) + '</span> <span class="mcp-server-type">' + escapeHtml(s.type) + '</span>' + (detail ? '<div class="mcp-server-detail">' + highlightText(detail, q) + '</div>' : '') + (configLines.length > 0 ? '<div class="mcp-server-config">' + configLines.join('<br>') + '</div>' : '') + '</div>';
+        }).join('')}
+      </div>` : ''}
     `;
 
     function switchTab(tab) {
       card.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-      card.classList.remove('show-memory', 'show-claude-md', 'show-skills');
+      card.classList.remove('show-memory', 'show-claude-md', 'show-skills', 'show-mcp');
       const sessionsDiv = card.querySelector('.project-sessions');
       if (tab === 'memory') {
         card.classList.add('show-memory');
@@ -743,6 +799,9 @@ function render(query) {
         sessionsDiv.style.display = 'none';
       } else if (tab === 'skills') {
         card.classList.add('show-skills');
+        sessionsDiv.style.display = 'none';
+      } else if (tab === 'mcp') {
+        card.classList.add('show-mcp');
         sessionsDiv.style.display = 'none';
       } else {
         sessionsDiv.style.display = 'block';
@@ -781,6 +840,13 @@ function render(query) {
       });
     });
 
+    card.querySelectorAll('.mcp-server .mcp-server-name').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        el.parentElement.classList.toggle('expanded');
+      });
+    });
+
     card.querySelectorAll('.resume-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -805,11 +871,12 @@ function render(query) {
     if (hasQuery) {
       card.classList.add('expanded');
       const sessionsDiv = card.querySelector('.project-sessions');
-      if (matchingSessions.length === 0 && (memoryMatch || claudeMdMatch || skillsMatch)) {
-        const bestTab = memoryMatch ? 'memory' : claudeMdMatch ? 'claude-md' : 'skills';
+      if (matchingSessions.length === 0 && (memoryMatch || claudeMdMatch || skillsMatch || mcpMatch)) {
+        const bestTab = memoryMatch ? 'memory' : claudeMdMatch ? 'claude-md' : skillsMatch ? 'skills' : 'mcp';
         if (bestTab === 'memory') card.classList.add('show-memory');
         else if (bestTab === 'claude-md') card.classList.add('show-claude-md');
-        else card.classList.add('show-skills');
+        else if (bestTab === 'skills') card.classList.add('show-skills');
+        else card.classList.add('show-mcp');
         if (sessionsDiv) sessionsDiv.style.display = 'none';
         card.querySelectorAll('.tab-btn').forEach(b => {
           b.classList.toggle('active', b.dataset.tab === bestTab);
@@ -982,6 +1049,21 @@ function renderSkills(query) {
   });
 }
 
+function renderMcpServerConfig(s) {
+  let lines = [];
+  if (s.headers) {
+    Object.entries(s.headers).forEach(([k, v]) => {
+      lines.push('<span class="mcp-config-key">' + escapeHtml(k) + '</span>: ' + (String(v).includes('****') ? '<span class="mcp-config-masked">' + escapeHtml(v) + '</span>' : escapeHtml(v)));
+    });
+  }
+  if (s.env) {
+    Object.entries(s.env).forEach(([k, v]) => {
+      lines.push('<span class="mcp-config-key">' + escapeHtml(k) + '</span>=' + '<span class="mcp-config-masked">' + escapeHtml(v) + '</span>');
+    });
+  }
+  return lines.length > 0 ? '<div class="mcp-server-config">' + lines.join('<br>') + '</div>' : '';
+}
+
 function renderMcpServers(servers, query) {
   return servers.map(s => {
     const q = query || '';
@@ -990,6 +1072,7 @@ function renderMcpServers(servers, query) {
       <span class="mcp-server-name">${highlightText(s.name, q)}</span>
       <span class="mcp-server-type">${escapeHtml(s.type)}</span>
       ${detail ? `<div class="mcp-server-detail">${highlightText(detail, q)}</div>` : ''}
+      ${renderMcpServerConfig(s)}
     </div>`;
   }).join('');
 }
@@ -1050,6 +1133,14 @@ function renderMcp(query) {
   container.querySelectorAll('.skills-group-header').forEach(header => {
     header.addEventListener('click', () => {
       header.parentElement.classList.toggle('expanded');
+    });
+  });
+
+  // Click handlers for MCP server names (expand config)
+  container.querySelectorAll('.mcp-server .mcp-server-name').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.parentElement.classList.toggle('expanded');
     });
   });
 

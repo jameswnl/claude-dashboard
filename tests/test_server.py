@@ -13,6 +13,8 @@ from claude_dashboard.server import (
 from claude_dashboard.data import (
     _extract_commands_from_dir,
     _extract_plugin_meta,
+    _is_secret_header,
+    _mask_value,
     _read_mcp_servers,
     _read_skill_file,
     collect_all_skills,
@@ -1484,3 +1486,69 @@ def test_get_html_has_mcp_view():
     html = get_html()
     assert "view-mcp" in html
     assert "mcp-content" in html
+
+
+# --- Secret masking ---
+
+def test_mask_value_short():
+    assert _mask_value("abc") == "****"
+
+
+def test_mask_value_long():
+    assert _mask_value("abcdefghijklmnop") == "abcdefgh****"
+
+
+def test_is_secret_header():
+    assert _is_secret_header("Authorization") is True
+    assert _is_secret_header("X-Slack-Web-Token") is True
+    assert _is_secret_header("X-Api-Key") is True
+    assert _is_secret_header("Cookie") is True
+    assert _is_secret_header("x-atlassian-site-url") is False
+    assert _is_secret_header("Content-Type") is False
+
+
+def test_read_mcp_servers_with_headers_masked(tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({
+        "mcpServers": {
+            "test": {
+                "type": "http",
+                "url": "https://example.com",
+                "headers": {
+                    "Authorization": "Bearer supersecrettoken123",
+                    "x-site-url": "https://example.com",
+                }
+            }
+        }
+    }))
+    result = _read_mcp_servers(config)
+    assert "****" in result["test"]["headers"]["Authorization"]
+    assert result["test"]["headers"]["x-site-url"] == "https://example.com"
+
+
+def test_read_mcp_servers_with_env_masked(tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({
+        "mcpServers": {
+            "test": {
+                "type": "stdio",
+                "command": "node",
+                "env": {"API_KEY": "sk-1234567890abcdef"}
+            }
+        }
+    }))
+    result = _read_mcp_servers(config)
+    assert "****" in result["test"]["env"]["API_KEY"]
+    assert result["test"]["env"]["API_KEY"] == "sk-12345****"
+
+
+def test_collect_data_includes_mcp_servers(tmp_path, monkeypatch):
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    proj = tmp_path / (_home_prefix() + "-ws-test")
+    proj.mkdir()
+    data = {"type": "user", "message": {"role": "user", "content": "hi"},
+            "timestamp": "2026-01-01T00:00:00Z", "sessionId": "s"}
+    (proj / "s.jsonl").write_text(json.dumps(data))
+    result = collect_data()
+    assert "mcp_servers" in result[0]
+    assert isinstance(result[0]["mcp_servers"], list)

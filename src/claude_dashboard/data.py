@@ -183,6 +183,23 @@ def collect_all_skills():
     return result
 
 
+_SECRET_KEYS = {"authorization", "token", "secret", "key", "password", "cookie", "api-key", "apikey"}
+
+
+def _mask_value(value):
+    """Mask a secret value, showing only first 8 chars."""
+    s = str(value)
+    if len(s) <= 8:
+        return "****"
+    return s[:8] + "****"
+
+
+def _is_secret_header(key):
+    """Check if a header key likely contains a secret."""
+    lower = key.lower()
+    return any(s in lower for s in _SECRET_KEYS)
+
+
 def _read_mcp_servers(filepath):
     """Read MCP server configs from a JSON file."""
     try:
@@ -201,6 +218,13 @@ def _read_mcp_servers(filepath):
                 entry["command"] = cfg["command"]
             if "args" in cfg:
                 entry["args"] = cfg["args"]
+            if "env" in cfg and isinstance(cfg["env"], dict):
+                entry["env"] = {k: _mask_value(v) for k, v in cfg["env"].items()}
+            if "headers" in cfg and isinstance(cfg["headers"], dict):
+                entry["headers"] = {
+                    k: (_mask_value(v) if _is_secret_header(k) else v)
+                    for k, v in cfg["headers"].items()
+                }
             result[name] = entry
         return result
     except Exception:
@@ -251,6 +275,9 @@ def collect_data():
         memory_files = extract_memory_files(project_dir)
         claude_md = find_claude_md(project_dir.name)
         skills = extract_project_skills(project_dir.name)
+        project_path = dirname_to_path(project_dir.name)
+        mcp_file = Path(project_path) / ".mcp.json"
+        mcp_servers = list(_read_mcp_servers(mcp_file).values()) if mcp_file.is_file() else []
         for s in sessions:
             s["started"] = format_date(s["started"])
             s["last_activity"] = format_date(s["last_activity"])
@@ -262,6 +289,7 @@ def collect_data():
             "memory_files": memory_files,
             "claude_md": claude_md,
             "skills": skills,
+            "mcp_servers": mcp_servers,
         })
     projects_data.sort(key=lambda p: len(p["sessions"]), reverse=True)
     return projects_data
