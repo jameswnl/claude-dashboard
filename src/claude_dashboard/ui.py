@@ -385,6 +385,102 @@ def get_html():
     overflow-y: auto;
     font-family: 'SF Mono', 'Fira Code', monospace;
   }
+  .view-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .view-tab {
+    padding: 10px 24px;
+    font-size: 14px;
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s;
+  }
+  .view-tab:hover {
+    color: var(--text);
+  }
+  .view-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .skills-section {
+    margin-bottom: 24px;
+  }
+  .skills-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .skills-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .skills-group-header {
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent2);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .skills-group-header:hover {
+    background: var(--surface2);
+  }
+  .skills-group-count {
+    background: var(--surface2);
+    color: var(--text-dim);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+  .skills-group-body {
+    display: none;
+    border-top: 1px solid var(--border);
+  }
+  .skills-group.expanded .skills-group-body {
+    display: block;
+  }
+  .skill-item {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .skill-item:last-child {
+    border-bottom: none;
+  }
+  .skill-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent3);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    margin-bottom: 6px;
+  }
+  .skill-content {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    background: var(--bg);
+    padding: 10px 14px;
+    border-radius: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
 </style>
 </head>
 <body>
@@ -403,16 +499,27 @@ def get_html():
   <button class="refresh-btn" id="refresh" title="Refresh data">Refresh</button>
 </div>
 
-<div class="container">
+<div class="view-tabs">
+  <button class="view-tab active" id="view-projects">Projects</button>
+  <button class="view-tab" id="view-skills">Skills</button>
+</div>
+
+<div class="container" id="projects-view">
   <div class="project-grid" id="grid"></div>
   <div class="no-results" id="no-results" style="display:none">No matching projects or sessions found.</div>
 </div>
 
+<div class="container" id="skills-view" style="display:none">
+  <div id="skills-content"></div>
+</div>
+
 <script>
 let DATA = [];
+let SKILLS = {};
 let currentVersion = 0;
 let caseSensitive = false;
 let fullWord = false;
+let currentView = 'projects';
 
 const grid = document.getElementById('grid');
 const searchInput = document.getElementById('search');
@@ -607,13 +714,129 @@ const searchClear = document.getElementById('search-clear');
 searchInput.addEventListener('input', (e) => {
   searchClear.style.display = e.target.value ? 'block' : 'none';
   render(e.target.value);
+  if (currentView === 'skills') renderSkills(e.target.value);
 });
 searchClear.addEventListener('click', () => {
   searchInput.value = '';
   searchClear.style.display = 'none';
   render('');
+  if (currentView === 'skills') renderSkills('');
   searchInput.focus();
 });
+
+// View switching
+const viewProjects = document.getElementById('view-projects');
+const viewSkills = document.getElementById('view-skills');
+const projectsView = document.getElementById('projects-view');
+const skillsView = document.getElementById('skills-view');
+
+viewProjects.addEventListener('click', () => {
+  currentView = 'projects';
+  viewProjects.classList.add('active');
+  viewSkills.classList.remove('active');
+  projectsView.style.display = '';
+  skillsView.style.display = 'none';
+});
+viewSkills.addEventListener('click', () => {
+  currentView = 'skills';
+  viewSkills.classList.add('active');
+  viewProjects.classList.remove('active');
+  projectsView.style.display = 'none';
+  skillsView.style.display = '';
+  renderSkills(searchInput.value);
+});
+
+function renderSkillGroup(title, skills, query) {
+  const filtered = query
+    ? skills.filter(s => searchMatch(s.name, query) || searchMatch(s.content, query))
+    : skills;
+  if (filtered.length === 0) return '';
+  return filtered.map(s => `
+    <div class="skill-item">
+      <div class="skill-name">/${highlightText(s.name, query)}</div>
+      <div class="skill-content">${highlightText(s.content, query)}</div>
+    </div>
+  `).join('');
+}
+
+function renderSkills(query) {
+  const container = document.getElementById('skills-content');
+  const q = query || '';
+  const hasQuery = q.length > 0;
+  let html = '';
+  let totalCount = 0;
+
+  // User skills
+  if (SKILLS.user && SKILLS.user.length > 0) {
+    const items = renderSkillGroup('User', SKILLS.user, q);
+    if (items) {
+      totalCount += SKILLS.user.length;
+      html += `<div class="skills-section">
+        <div class="skills-section-title">User Skills</div>
+        <div class="skills-group expanded">
+          <div class="skills-group-body" style="display:block">${items}</div>
+        </div>
+      </div>`;
+    }
+  }
+
+  // Project skills
+  if (SKILLS.projects && SKILLS.projects.length > 0) {
+    let projectsHtml = '';
+    SKILLS.projects.forEach(p => {
+      const items = renderSkillGroup(p.name, p.skills, q);
+      if (items || !hasQuery) {
+        totalCount += p.skills.length;
+        projectsHtml += `<div class="skills-group">
+          <div class="skills-group-header">
+            <span>${highlightText(p.name, q)}</span>
+            <span class="skills-group-count">${p.skills.length} skill${p.skills.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="skills-group-body">${items || renderSkillGroup(p.name, p.skills, '')}</div>
+        </div>`;
+      }
+    });
+    if (projectsHtml) {
+      html += `<div class="skills-section">
+        <div class="skills-section-title">Project Skills</div>
+        ${projectsHtml}
+      </div>`;
+    }
+  }
+
+  // Plugin skills
+  if (SKILLS.plugins && SKILLS.plugins.length > 0) {
+    let pluginsHtml = '';
+    SKILLS.plugins.forEach(p => {
+      const items = renderSkillGroup(p.name, p.skills, q);
+      if (items || !hasQuery) {
+        totalCount += p.skills.length;
+        pluginsHtml += `<div class="skills-group">
+          <div class="skills-group-header">
+            <span>${highlightText(p.name, q)}</span>
+            <span class="skills-group-count">${p.skills.length} skill${p.skills.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="skills-group-body">${items || renderSkillGroup(p.name, p.skills, '')}</div>
+        </div>`;
+      }
+    });
+    if (pluginsHtml) {
+      html += `<div class="skills-section">
+        <div class="skills-section-title">Plugin Skills</div>
+        ${pluginsHtml}
+      </div>`;
+    }
+  }
+
+  container.innerHTML = html || '<div class="no-results">No skills found.</div>';
+
+  // Add click handlers for group headers
+  container.querySelectorAll('.skills-group-header').forEach(header => {
+    header.addEventListener('click', () => {
+      header.parentElement.classList.toggle('expanded');
+    });
+  });
+}
 
 async function fetchData() {
   const resp = await fetch('/api/data');
@@ -621,7 +844,9 @@ async function fetchData() {
   if (result.version !== currentVersion) {
     currentVersion = result.version;
     DATA = result.data;
+    SKILLS = result.skills || {};
     render(searchInput.value);
+    if (currentView === 'skills') renderSkills(searchInput.value);
   }
 }
 

@@ -10,6 +10,9 @@ from claude_dashboard.server import (
     get_state,
 )
 from claude_dashboard.data import (
+    _extract_commands_from_dir,
+    _read_skill_file,
+    collect_all_skills,
     collect_data,
     extract_memory_files,
     extract_sessions,
@@ -356,7 +359,7 @@ def test_collect_data_includes_memory(tmp_path, monkeypatch):
 def test_dashboard_state(tmp_path, monkeypatch):
     monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     s = DashboardState()
-    data_json, version = s.get()
+    data_json, skills_json, version = s.get()
     assert version == 1
     assert json.loads(data_json) == []
 
@@ -368,7 +371,7 @@ def test_dashboard_state(tmp_path, monkeypatch):
     (proj / "s.jsonl").write_text(json.dumps(d))
     s.refresh()
 
-    data_json, version = s.get()
+    data_json, skills_json, version = s.get()
     assert version == 2
     data = json.loads(data_json)
     assert len(data) == 1
@@ -573,3 +576,101 @@ def test_get_html_has_search_toggles():
     assert "toggle-case" in html
     assert "toggle-word" in html
     assert "search-clear" in html
+
+
+# --- Skills ---
+
+def test_read_skill_file(tmp_path):
+    skill_file = tmp_path / "my-skill.md"
+    skill_file.write_text("Do something useful")
+    result = _read_skill_file(skill_file)
+    assert result["name"] == "my-skill"
+    assert result["content"] == "Do something useful"
+
+
+def test_read_skill_file_truncates(tmp_path):
+    skill_file = tmp_path / "big.md"
+    skill_file.write_text("x" * 5000)
+    result = _read_skill_file(skill_file)
+    assert len(result["content"]) == 3000
+
+
+def test_extract_commands_from_dir_empty(tmp_path):
+    assert _extract_commands_from_dir(tmp_path) == []
+
+
+def test_extract_commands_from_dir_with_files(tmp_path):
+    (tmp_path / "skill-a.md").write_text("Skill A")
+    (tmp_path / "skill-b.md").write_text("Skill B")
+    (tmp_path / "not-a-skill.txt").write_text("ignored")
+    result = _extract_commands_from_dir(tmp_path)
+    assert len(result) == 2
+    names = [s["name"] for s in result]
+    assert "skill-a" in names
+    assert "skill-b" in names
+
+
+def test_extract_commands_from_dir_nonexistent(tmp_path):
+    assert _extract_commands_from_dir(tmp_path / "nope") == []
+
+
+def test_collect_all_skills_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", tmp_path / "claude")
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_all_skills()
+    assert result["user"] == []
+    assert result["projects"] == []
+    assert result["plugins"] == []
+
+
+def test_collect_all_skills_with_user_skills(tmp_path, monkeypatch):
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    commands = claude_dir / "commands"
+    commands.mkdir()
+    (commands / "my-cmd.md").write_text("User command")
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_all_skills()
+    assert len(result["user"]) == 1
+    assert result["user"][0]["name"] == "my-cmd"
+
+
+def test_collect_all_skills_with_plugins(tmp_path, monkeypatch):
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    marketplace = claude_dir / "plugins" / "marketplaces" / "official" / "plugins" / "my-plugin" / "commands"
+    marketplace.mkdir(parents=True)
+    (marketplace / "do-thing.md").write_text("Plugin skill")
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_all_skills()
+    assert len(result["plugins"]) == 1
+    assert result["plugins"][0]["name"] == "my-plugin"
+    assert result["plugins"][0]["skills"][0]["name"] == "do-thing"
+
+
+def test_get_html_has_skills_view():
+    html = get_html()
+    assert "view-skills" in html
+    assert "skills-content" in html
+
+
+def test_api_data_includes_skills(tmp_path, monkeypatch):
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", tmp_path / "claude")
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/data")
+    body = json.loads(resp.read())
+    assert "skills" in body
+    assert "user" in body["skills"]
+    assert "projects" in body["skills"]
+    assert "plugins" in body["skills"]
+    server.server_close()

@@ -21,7 +21,7 @@ from pathlib import Path
 from datetime import datetime
 
 from . import data as _data
-from .data import collect_data, get_dir_fingerprint, PROJECTS_DIR
+from .data import collect_data, collect_all_skills, get_dir_fingerprint, PROJECTS_DIR
 from .data import extract_memory_files, extract_sessions
 from .ui import get_html
 from .utils import (
@@ -43,18 +43,21 @@ class DashboardState:
     def __init__(self):
         self.lock = threading.Lock()
         self.data_json = "[]"
+        self.skills_json = "{}"
         self.version = 0
         self.refresh()
 
     def refresh(self):
         data = collect_data()
+        skills = collect_all_skills()
         with self.lock:
             self.data_json = json.dumps(data)
+            self.skills_json = json.dumps(skills)
             self.version += 1
 
     def get(self):
         with self.lock:
-            return self.data_json, self.version
+            return self.data_json, self.skills_json, self.version
 
 
 state = None
@@ -92,8 +95,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(get_html().encode())
         elif self.path.startswith("/api/data"):
-            data_json, version = get_state().get()
-            response = json.dumps({"version": version, "data": json.loads(data_json)})
+            data_json, skills_json, version = get_state().get()
+            response = json.dumps({
+                "version": version,
+                "data": json.loads(data_json),
+                "skills": json.loads(skills_json),
+            })
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()

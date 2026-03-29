@@ -5,9 +5,10 @@ import json
 import os
 from pathlib import Path
 
-from .utils import find_claude_md, format_date, project_display_name
+from .utils import dirname_to_path, find_claude_md, format_date, project_display_name
 
 PROJECTS_DIR = Path(os.environ.get("CLAUDE_PROJECTS_DIR", Path.home() / ".claude" / "projects"))
+CLAUDE_DIR = Path.home() / ".claude"
 
 
 def extract_memory_files(project_path):
@@ -72,6 +73,81 @@ def extract_sessions(project_path):
             })
     sessions.sort(key=lambda s: s.get("started", ""), reverse=True)
     return sessions
+
+
+def _read_skill_file(filepath):
+    """Read a skill/command .md file and return its metadata."""
+    try:
+        content = filepath.read_text(errors="replace")[:3000]
+        return {"name": filepath.stem, "content": content}
+    except Exception:
+        return None
+
+
+def _extract_commands_from_dir(commands_dir):
+    """Extract skill files from a commands directory."""
+    skills = []
+    if not commands_dir.is_dir():
+        return skills
+    for f in sorted(commands_dir.iterdir()):
+        if f.is_file() and f.suffix == ".md":
+            skill = _read_skill_file(f)
+            if skill:
+                skills.append(skill)
+    return skills
+
+
+def extract_project_skills(project_dirname):
+    """Extract skills from a project's .claude/commands/ directory."""
+    project_path = dirname_to_path(project_dirname)
+    commands_dir = Path(project_path) / ".claude" / "commands"
+    return _extract_commands_from_dir(commands_dir)
+
+
+def collect_all_skills():
+    """Collect skills from all sources: user-level, project-level, and plugins."""
+    result = {"user": [], "projects": [], "plugins": []}
+
+    # User-level commands
+    user_commands = CLAUDE_DIR / "commands"
+    result["user"] = _extract_commands_from_dir(user_commands)
+
+    # Project-level commands (scan known project dirs)
+    if PROJECTS_DIR.is_dir():
+        seen = set()
+        for project_dir in sorted(PROJECTS_DIR.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            project_path = dirname_to_path(project_dir.name)
+            commands_dir = Path(project_path) / ".claude" / "commands"
+            if commands_dir.is_dir() and project_path not in seen:
+                seen.add(project_path)
+                skills = _extract_commands_from_dir(commands_dir)
+                if skills:
+                    result["projects"].append({
+                        "name": project_display_name(project_dir.name),
+                        "dirname": project_dir.name,
+                        "skills": skills,
+                    })
+
+    # Plugin commands
+    plugins_dir = CLAUDE_DIR / "plugins" / "marketplaces"
+    if plugins_dir.is_dir():
+        for marketplace in sorted(plugins_dir.iterdir()):
+            plugins_path = marketplace / "plugins"
+            if not plugins_path.is_dir():
+                continue
+            for plugin_dir in sorted(plugins_path.iterdir()):
+                commands_dir = plugin_dir / "commands"
+                if commands_dir.is_dir():
+                    skills = _extract_commands_from_dir(commands_dir)
+                    if skills:
+                        result["plugins"].append({
+                            "name": plugin_dir.name,
+                            "skills": skills,
+                        })
+
+    return result
 
 
 def collect_data():
