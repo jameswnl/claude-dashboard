@@ -15,10 +15,11 @@ Scans `~/.claude/projects/` and presents everything in a searchable web UI.
 - Browse all projects with session counts
 - Expand projects to see session history and first messages
 - View memory files and CLAUDE.md per project
-- Full-text search across project names, session messages, memory, and CLAUDE.md
+- Browse skills/commands from user, project, and plugin sources
+- Full-text search with case-sensitive and full-word match options
 - Auto-highlights search matches
-- Live auto-refresh when files change
 - Resume any session directly from the dashboard (opens iTerm2 or Terminal)
+- Live auto-refresh when files change
 
 ## Setup
 

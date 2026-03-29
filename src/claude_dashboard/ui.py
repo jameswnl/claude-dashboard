@@ -409,6 +409,32 @@ def get_html():
     color: var(--accent);
     border-bottom-color: var(--accent);
   }
+  .skills-summary {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .skills-summary-item {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    text-decoration: none;
+  }
+  .skills-summary-item:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .skills-summary-count {
+    color: var(--accent);
+    font-weight: 600;
+    margin-right: 4px;
+  }
   .skills-section {
     margin-bottom: 24px;
   }
@@ -763,16 +789,25 @@ function renderSkills(query) {
   const container = document.getElementById('skills-content');
   const q = query || '';
   const hasQuery = q.length > 0;
-  let html = '';
-  let totalCount = 0;
+  let sectionsHtml = '';
+
+  const userCount = SKILLS.user ? SKILLS.user.length : 0;
+  const projectSkillCount = SKILLS.projects ? SKILLS.projects.reduce((s, p) => s + p.skills.length, 0) : 0;
+  const pluginSkillCount = SKILLS.plugins ? SKILLS.plugins.reduce((s, p) => s + p.skills.length, 0) : 0;
+
+  // Summary bar
+  let summaryItems = [];
+  if (userCount > 0) summaryItems.push(`<a class="skills-summary-item" href="#skills-user"><span class="skills-summary-count">${userCount}</span>User</a>`);
+  if (projectSkillCount > 0) summaryItems.push(`<a class="skills-summary-item" href="#skills-projects"><span class="skills-summary-count">${projectSkillCount}</span>Project</a>`);
+  if (pluginSkillCount > 0) summaryItems.push(`<a class="skills-summary-item" href="#skills-plugins"><span class="skills-summary-count">${pluginSkillCount}</span>Plugin</a>`);
+  const summaryHtml = summaryItems.length > 0 ? `<div class="skills-summary">${summaryItems.join('')}</div>` : '';
 
   // User skills
-  if (SKILLS.user && SKILLS.user.length > 0) {
+  if (userCount > 0) {
     const items = renderSkillGroup('User', SKILLS.user, q);
     if (items) {
-      totalCount += SKILLS.user.length;
-      html += `<div class="skills-section">
-        <div class="skills-section-title">User Skills</div>
+      sectionsHtml += `<div class="skills-section" id="skills-user">
+        <div class="skills-section-title">User Skills <span style="color:var(--text-dim);font-size:13px;font-weight:400">(${userCount})</span></div>
         <div class="skills-group expanded">
           <div class="skills-group-body" style="display:block">${items}</div>
         </div>
@@ -786,7 +821,6 @@ function renderSkills(query) {
     SKILLS.projects.forEach(p => {
       const items = renderSkillGroup(p.name, p.skills, q);
       if (items || !hasQuery) {
-        totalCount += p.skills.length;
         projectsHtml += `<div class="skills-group">
           <div class="skills-group-header">
             <span>${highlightText(p.name, q)}</span>
@@ -797,8 +831,8 @@ function renderSkills(query) {
       }
     });
     if (projectsHtml) {
-      html += `<div class="skills-section">
-        <div class="skills-section-title">Project Skills</div>
+      sectionsHtml += `<div class="skills-section" id="skills-projects">
+        <div class="skills-section-title">Project Skills <span style="color:var(--text-dim);font-size:13px;font-weight:400">(${projectSkillCount} across ${SKILLS.projects.length} projects)</span></div>
         ${projectsHtml}
       </div>`;
     }
@@ -810,7 +844,6 @@ function renderSkills(query) {
     SKILLS.plugins.forEach(p => {
       const items = renderSkillGroup(p.name, p.skills, q);
       if (items || !hasQuery) {
-        totalCount += p.skills.length;
         pluginsHtml += `<div class="skills-group">
           <div class="skills-group-header">
             <span>${highlightText(p.name, q)}</span>
@@ -821,19 +854,28 @@ function renderSkills(query) {
       }
     });
     if (pluginsHtml) {
-      html += `<div class="skills-section">
-        <div class="skills-section-title">Plugin Skills</div>
+      sectionsHtml += `<div class="skills-section" id="skills-plugins">
+        <div class="skills-section-title">Plugin Skills <span style="color:var(--text-dim);font-size:13px;font-weight:400">(${pluginSkillCount} across ${SKILLS.plugins.length} plugins)</span></div>
         ${pluginsHtml}
       </div>`;
     }
   }
 
-  container.innerHTML = html || '<div class="no-results">No skills found.</div>';
+  container.innerHTML = (summaryHtml + sectionsHtml) || '<div class="no-results">No skills found.</div>';
 
   // Add click handlers for group headers
   container.querySelectorAll('.skills-group-header').forEach(header => {
     header.addEventListener('click', () => {
       header.parentElement.classList.toggle('expanded');
+    });
+  });
+
+  // Smooth scroll for summary links
+  container.querySelectorAll('.skills-summary-item').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = document.querySelector(link.getAttribute('href'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 }
