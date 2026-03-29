@@ -282,8 +282,13 @@ def get_html():
     color: var(--accent3);
     font-family: 'SF Mono', 'Fira Code', monospace;
     margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .memory-file-name:hover {
+    color: var(--accent);
   }
   .memory-file-content {
+    display: none;
     font-size: 12px;
     color: var(--text-dim);
     line-height: 1.6;
@@ -294,6 +299,9 @@ def get_html():
     max-height: 400px;
     overflow-y: auto;
     font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .memory-file.expanded .memory-file-content {
+    display: block;
   }
   .tab-bar {
     display: flex;
@@ -503,8 +511,13 @@ def get_html():
     color: var(--accent3);
     font-family: 'SF Mono', 'Fira Code', monospace;
     margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .skill-name:hover {
+    color: var(--accent);
   }
   .skill-content {
+    display: none;
     font-size: 12px;
     color: var(--text-dim);
     line-height: 1.5;
@@ -515,6 +528,9 @@ def get_html():
     max-height: 200px;
     overflow-y: auto;
     font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .skill-item.expanded .skill-content {
+    display: block;
   }
 </style>
 </head>
@@ -716,6 +732,20 @@ function render(query) {
       });
     });
 
+    card.querySelectorAll('.memory-file-name').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        el.parentElement.classList.toggle('expanded');
+      });
+    });
+
+    card.querySelectorAll('.skill-item .skill-name').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        el.parentElement.classList.toggle('expanded');
+      });
+    });
+
     card.querySelectorAll('.resume-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -892,6 +922,14 @@ function renderSkills(query) {
   container.querySelectorAll('.skills-group-header').forEach(header => {
     header.addEventListener('click', () => {
       header.parentElement.classList.toggle('expanded');
+    });
+  });
+
+  // Add click handlers for skill items (fold/unfold)
+  container.querySelectorAll('.skill-item .skill-name').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.parentElement.classList.toggle('expanded');
     });
   });
 
