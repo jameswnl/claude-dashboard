@@ -161,6 +161,7 @@ def collect_data():
         sessions = extract_sessions(project_dir)
         memory_files = extract_memory_files(project_dir)
         claude_md = find_claude_md(project_dir.name)
+        skills = extract_project_skills(project_dir.name)
         for s in sessions:
             s["started"] = format_date(s["started"])
             s["last_activity"] = format_date(s["last_activity"])
@@ -171,6 +172,7 @@ def collect_data():
             "has_memory": len(memory_files) > 0,
             "memory_files": memory_files,
             "claude_md": claude_md,
+            "skills": skills,
         })
     projects_data.sort(key=lambda p: len(p["sessions"]), reverse=True)
     return projects_data

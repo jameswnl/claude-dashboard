@@ -674,3 +674,355 @@ def test_api_data_includes_skills(tmp_path, monkeypatch):
     assert "projects" in body["skills"]
     assert "plugins" in body["skills"]
     server.server_close()
+
+
+# --- Additional coverage tests ---
+
+
+# data.py: extract_memory_files exception branch (lines 23-24)
+def test_extract_memory_files_read_error(tmp_path, monkeypatch):
+    """Memory file that raises on read_text should be skipped."""
+    mem_dir = tmp_path / "memory"
+    mem_dir.mkdir()
+    f = mem_dir / "good.md"
+    f.write_text("good content")
+    bad = mem_dir / "bad.md"
+    bad.write_text("bad content")
+    # Make bad.md unreadable by monkeypatching
+    original_read_text = Path.read_text
+    def patched_read_text(self, *args, **kwargs):
+        if self.name == "bad.md":
+            raise PermissionError("no access")
+        return original_read_text(self, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", patched_read_text)
+    files = extract_memory_files(tmp_path)
+    assert len(files) == 1
+    assert files[0]["name"] == "good.md"
+
+
+# data.py: extract_sessions outer exception (lines 63-64)
+def test_extract_sessions_file_open_error(tmp_path, monkeypatch):
+    """If opening a jsonl file raises, that session is skipped."""
+    good_data = {"type": "user", "message": {"role": "user", "content": "hello"},
+                 "timestamp": "2026-01-01T00:00:00Z", "sessionId": "good"}
+    (tmp_path / "good.jsonl").write_text(json.dumps(good_data))
+    (tmp_path / "bad.jsonl").write_text("some data")
+
+    # Make 'bad.jsonl' raise on open
+    import builtins
+    original_open = builtins.open
+    def patched_open(path, *args, **kwargs):
+        if str(path).endswith("bad.jsonl"):
+            raise PermissionError("cannot open")
+        return original_open(path, *args, **kwargs)
+    monkeypatch.setattr(builtins, "open", patched_open)
+
+    sessions = extract_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0]["id"] == "good"
+
+
+# data.py: _read_skill_file exception (lines 83-84)
+def test_read_skill_file_error(tmp_path, monkeypatch):
+    """If reading a skill file fails, return None."""
+    skill_file = tmp_path / "broken.md"
+    skill_file.write_text("content")
+    original_read_text = Path.read_text
+    def patched_read_text(self, *args, **kwargs):
+        if self.name == "broken.md":
+            raise PermissionError("no access")
+        return original_read_text(self, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", patched_read_text)
+    result = _read_skill_file(skill_file)
+    assert result is None
+
+
+# data.py: extract_project_skills (lines 102-104)
+def test_extract_project_skills(tmp_path):
+    from claude_dashboard.data import extract_project_skills
+    # Create a project directory with .claude/commands
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    commands_dir = project_dir / ".claude" / "commands"
+    commands_dir.mkdir(parents=True)
+    (commands_dir / "cmd1.md").write_text("Command 1")
+
+    # Build the dirname that resolves to this path
+    parts = str(project_dir).lstrip("/").split("/")
+    dirname = "-" + "-".join(parts)
+    skills = extract_project_skills(dirname)
+    assert len(skills) == 1
+    assert skills[0]["name"] == "cmd1"
+
+
+# data.py: collect_all_skills with project-level commands (lines 120, 124-127)
+def test_collect_all_skills_with_project_skills(tmp_path, monkeypatch):
+    """Test project-level skills in collect_all_skills."""
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+
+    # Create a real project directory with .claude/commands
+    real_project = tmp_path / "real_project"
+    real_project.mkdir()
+    commands_dir = real_project / ".claude" / "commands"
+    commands_dir.mkdir(parents=True)
+    (commands_dir / "proj-cmd.md").write_text("Project command")
+
+    # Create a project entry in projects_dir whose dirname resolves to real_project
+    parts = str(real_project).lstrip("/").split("/")
+    project_dirname = "-" + "-".join(parts)
+    project_entry = projects_dir / project_dirname
+    project_entry.mkdir()
+
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", projects_dir)
+
+    result = collect_all_skills()
+    assert len(result["projects"]) == 1
+    assert result["projects"][0]["skills"][0]["name"] == "proj-cmd"
+
+
+# data.py: collect_all_skills skips non-dir in projects (line 120)
+def test_collect_all_skills_skips_file_in_projects(tmp_path, monkeypatch):
+    """Files in PROJECTS_DIR should be skipped."""
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    (projects_dir / "not-a-dir.txt").write_text("file")
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", projects_dir)
+    result = collect_all_skills()
+    assert result["projects"] == []
+
+
+# data.py: plugin marketplace without plugins subdir (line 139)
+def test_collect_all_skills_plugin_no_plugins_subdir(tmp_path, monkeypatch):
+    """Marketplace dir without 'plugins' subdir should be skipped."""
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    marketplace = claude_dir / "plugins" / "marketplaces" / "official"
+    marketplace.mkdir(parents=True)
+    # No 'plugins' subdir inside marketplace
+    (marketplace / "readme.txt").write_text("no plugins here")
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_all_skills()
+    assert result["plugins"] == []
+
+
+# data.py: get_dir_fingerprint OSError on jsonl stat (lines 189-190)
+def test_get_dir_fingerprint_oserror_jsonl(tmp_path, monkeypatch):
+    """OSError when stat-ing a jsonl file should be silently handled."""
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    project = tmp_path / "test-project"
+    project.mkdir()
+    jsonl = project / "session.jsonl"
+    jsonl.write_text("{}")
+
+    # Make stat raise OSError for jsonl files
+    original_stat = Path.stat
+    def patched_stat(self, *args, **kwargs):
+        if self.suffix == ".jsonl":
+            raise OSError("stat failed")
+        return original_stat(self, *args, **kwargs)
+    monkeypatch.setattr(Path, "stat", patched_stat)
+
+    fp = get_dir_fingerprint()
+    assert isinstance(fp, str)
+    assert len(fp) == 32
+
+
+# data.py: get_dir_fingerprint OSError on memory file stat (lines 196-197)
+def test_get_dir_fingerprint_oserror_memory(tmp_path, monkeypatch):
+    """OSError when stat-ing a memory file should be silently handled."""
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    project = tmp_path / "test-project"
+    project.mkdir()
+    mem_dir = project / "memory"
+    mem_dir.mkdir()
+    (mem_dir / "MEMORY.md").write_text("content")
+
+    original_stat = Path.stat
+    def patched_stat(self, *args, **kwargs):
+        if self.parent.name == "memory":
+            raise OSError("stat failed")
+        return original_stat(self, *args, **kwargs)
+    monkeypatch.setattr(Path, "stat", patched_stat)
+
+    fp = get_dir_fingerprint()
+    assert isinstance(fp, str)
+    assert len(fp) == 32
+
+
+# data.py: get_dir_fingerprint CLAUDE.md exists check (lines 202-207)
+def test_get_dir_fingerprint_with_claude_md(tmp_path, monkeypatch):
+    """Fingerprint should include CLAUDE.md from the real project path.
+
+    get_dir_fingerprint uses: real_path = '/' + project_dir.name.lstrip('-').replace('-', '/')
+    So we create a project dir named like '-real' which maps to '/real'.
+    We then create /real/CLAUDE.md (needs root, so we mock Path.exists instead).
+    """
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+
+    # Create a project subdir in PROJECTS_DIR
+    project_entry = tmp_path / "-tmp-testproj"
+    project_entry.mkdir()
+
+    # The fingerprint code computes: real_path = "/" + "tmp-testproj" = "/tmp/testproj"
+    # and checks Path("/tmp/testproj/CLAUDE.md").exists()
+    # We need /tmp/testproj to exist with a CLAUDE.md
+    import os
+    test_proj = Path("/tmp/testproj")
+    test_proj.mkdir(exist_ok=True)
+    claude_md = test_proj / "CLAUDE.md"
+    claude_md.write_text("instructions")
+
+    try:
+        fp1 = get_dir_fingerprint()
+
+        import time
+        time.sleep(0.05)
+        claude_md.write_text("updated instructions")
+
+        fp2 = get_dir_fingerprint()
+        assert fp1 != fp2
+    finally:
+        claude_md.unlink(missing_ok=True)
+        test_proj.rmdir()
+
+
+# data.py: get_dir_fingerprint outer exception (lines 206-207)
+def test_get_dir_fingerprint_outer_exception(tmp_path, monkeypatch):
+    """If iterdir raises, fingerprint should still return a hash."""
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+
+    # Make PROJECTS_DIR.iterdir() raise
+    def raise_error():
+        raise RuntimeError("broken")
+    monkeypatch.setattr(Path, "iterdir", lambda self: raise_error())
+
+    fp = get_dir_fingerprint()
+    assert isinstance(fp, str)
+    assert len(fp) == 32
+
+
+# data.py: collect_data includes claude_md
+def test_collect_data_includes_claude_md(tmp_path, monkeypatch):
+    """collect_data should include claude_md from find_claude_md."""
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+
+    # Use /tmp/testproj2 as the real project path
+    import os
+    test_proj = Path("/tmp/testproj2")
+    test_proj.mkdir(exist_ok=True)
+    (test_proj / "CLAUDE.md").write_text("# Project instructions")
+
+    try:
+        # dirname "-tmp-testproj2" resolves to /tmp/testproj2
+        project_entry = tmp_path / "-tmp-testproj2"
+        project_entry.mkdir()
+
+        # Add a session so the project shows up
+        data = {"type": "user", "message": {"role": "user", "content": "hi"},
+                "timestamp": "2026-01-01T00:00:00Z", "sessionId": "s1"}
+        (project_entry / "s1.jsonl").write_text(json.dumps(data))
+
+        result = collect_data()
+        assert len(result) == 1
+        assert result[0]["claude_md"] == "# Project instructions"
+    finally:
+        (test_proj / "CLAUDE.md").unlink(missing_ok=True)
+        test_proj.rmdir()
+
+
+# utils.py: read_claude_md exception branch (lines 47-48)
+def test_read_claude_md_exception(tmp_path, monkeypatch):
+    """If read_text raises, return None."""
+    (tmp_path / "CLAUDE.md").write_text("content")
+    original_read_text = Path.read_text
+    def patched_read_text(self, *args, **kwargs):
+        if self.name == "CLAUDE.md":
+            raise PermissionError("no access")
+        return original_read_text(self, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", patched_read_text)
+    result = read_claude_md(tmp_path)
+    assert result is None
+
+
+# utils.py: open_terminal_with_session - iTerm fails, Terminal succeeds (line 121)
+def test_open_terminal_iterm_fails_terminal_succeeds(tmp_path, monkeypatch):
+    """When iTerm2 fails but Terminal.app succeeds, return ok."""
+    import subprocess as sp
+    call_count = [0]
+    def mock_run(*args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise Exception("iTerm not found")
+        return sp.CompletedProcess(args=args, returncode=0)
+    monkeypatch.setattr("claude_dashboard.utils.subprocess.run", mock_run)
+    parts = str(tmp_path).lstrip("/").split("/")
+    dirname = "-" + "-".join(parts)
+    result = open_terminal_with_session("test-session", dirname)
+    assert result["ok"] is True
+    assert call_count[0] == 2
+
+
+# utils.py: dirname_to_path with empty string
+def test_dirname_to_path_empty_string():
+    """Empty dirname should still work."""
+    result = dirname_to_path("")
+    # "".lstrip("-").split("-") = [""] so parts is non-empty
+    # The single empty part becomes path / "" which is just "/"
+    assert result == "/"
+
+
+# extract_sessions: content is list with non-text types
+def test_extract_sessions_list_content_no_text(tmp_path):
+    """List content without text type should not set first_message."""
+    data = {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "image", "url": "http://x"}]},
+        "timestamp": "2026-01-01T00:00:00Z",
+        "sessionId": "s",
+    }
+    (tmp_path / "s.jsonl").write_text(json.dumps(data))
+    sessions = extract_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0]["first_message"] == "(no message)"
+
+
+# extract_sessions: message without type=user should be ignored
+def test_extract_sessions_non_user_type(tmp_path):
+    """Non-user type entries with timestamps should still update last_timestamp."""
+    lines = [
+        {"type": "user", "message": {"role": "user", "content": "hi"},
+         "timestamp": "2026-01-01T00:00:00Z"},
+        {"type": "system", "timestamp": "2026-01-01T02:00:00Z"},
+    ]
+    (tmp_path / "s.jsonl").write_text("\n".join(json.dumps(l) for l in lines))
+    sessions = extract_sessions(tmp_path)
+    assert sessions[0]["last_activity"] == "2026-01-01T02:00:00Z"
+    assert sessions[0]["message_count"] == 1
+
+
+# extract_sessions: no first_message and no timestamp should skip
+def test_extract_sessions_no_message_no_timestamp(tmp_path):
+    """Session with no user message and no timestamp should be skipped."""
+    data = {"type": "system", "info": "something"}
+    (tmp_path / "s.jsonl").write_text(json.dumps(data))
+    sessions = extract_sessions(tmp_path)
+    assert sessions == []
+
+
+# server.py: log_message is suppressed
+def test_handler_log_message_suppressed(tmp_path, monkeypatch):
+    """DashboardHandler.log_message should do nothing (suppress logs)."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+    handler = DashboardHandler.__new__(DashboardHandler)
+    # Should not raise
+    handler.log_message("test %s", "msg")
