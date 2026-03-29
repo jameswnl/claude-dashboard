@@ -68,10 +68,17 @@ def get_html():
     min-width: 250px;
     max-width: 500px;
     margin-left: auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .search-input-wrap {
+    flex: 1;
+    position: relative;
   }
   .search-bar input {
     width: 100%;
-    padding: 10px 16px;
+    padding: 10px 32px 10px 16px;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--search-bg);
@@ -79,6 +86,45 @@ def get_html():
     font-size: 14px;
     outline: none;
     transition: border-color 0.2s;
+  }
+  .search-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    line-height: 1;
+    display: none;
+  }
+  .search-clear:hover {
+    color: var(--text);
+  }
+  .search-toggle {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    line-height: 1;
+  }
+  .search-toggle:hover {
+    color: var(--text);
+    border-color: var(--text-dim);
+  }
+  .search-toggle.active {
+    background: var(--accent2);
+    color: var(--bg);
+    border-color: var(--accent2);
   }
   .search-bar input:focus {
     border-color: var(--accent);
@@ -344,7 +390,12 @@ def get_html():
   <h1><span class="live-dot"></span>Claude Code Dashboard</h1>
   <span class="stats" id="stats"></span>
   <div class="search-bar">
-    <input type="text" id="search" placeholder="Search projects, sessions, memory, CLAUDE.md..." autofocus>
+    <div class="search-input-wrap">
+      <input type="text" id="search" placeholder="Search projects, sessions, memory, CLAUDE.md..." autofocus>
+      <button class="search-clear" id="search-clear" title="Clear search">&times;</button>
+    </div>
+    <button class="search-toggle" id="toggle-case" title="Case sensitive">Aa</button>
+    <button class="search-toggle" id="toggle-word" title="Full word match">W</button>
   </div>
   <button class="refresh-btn" id="refresh" title="Refresh data">Refresh</button>
 </div>
@@ -357,11 +408,26 @@ def get_html():
 <script>
 let DATA = [];
 let currentVersion = 0;
+let caseSensitive = false;
+let fullWord = false;
 
 const grid = document.getElementById('grid');
 const searchInput = document.getElementById('search');
 const statsEl = document.getElementById('stats');
 const noResults = document.getElementById('no-results');
+const toggleCase = document.getElementById('toggle-case');
+const toggleWord = document.getElementById('toggle-word');
+
+toggleCase.addEventListener('click', () => {
+  caseSensitive = !caseSensitive;
+  toggleCase.classList.toggle('active', caseSensitive);
+  render(searchInput.value);
+});
+toggleWord.addEventListener('click', () => {
+  fullWord = !fullWord;
+  toggleWord.classList.toggle('active', fullWord);
+  render(searchInput.value);
+});
 
 function escapeHtml(s) {
   const d = document.createElement('div');
@@ -369,39 +435,51 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+function searchMatch(text, query) {
+  if (!query) return false;
+  const flags = caseSensitive ? '' : 'i';
+  const escaped = query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+  const pattern = fullWord ? '\\\\b' + escaped + '\\\\b' : escaped;
+  return new RegExp(pattern, flags).test(text);
+}
+
 function highlightText(text, query) {
   if (!query) return escapeHtml(text);
   const escaped = escapeHtml(text);
-  const re = new RegExp('(' + query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + ')', 'gi');
+  const flags = caseSensitive ? 'g' : 'gi';
+  const escapedQ = query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+  const pattern = fullWord ? '\\\\b(' + escapedQ + ')\\\\b' : '(' + escapedQ + ')';
+  const re = new RegExp(pattern, flags);
   return escaped.replace(re, '<span class="highlight">$1</span>');
 }
 
 function render(query) {
   grid.innerHTML = '';
   let visibleCount = 0;
-  const q = (query || '').toLowerCase();
+  const q = query || '';
+  const hasQuery = q.length > 0;
 
   const totalSessions = DATA.reduce((s, p) => s + p.sessions.length, 0);
   statsEl.textContent = DATA.length + ' projects | ' + totalSessions + ' sessions';
 
   DATA.forEach((project, pi) => {
-    const nameMatch = !q || project.name.toLowerCase().includes(q);
+    const nameMatch = !hasQuery || searchMatch(project.name, q);
     const matchingSessions = project.sessions.filter(s => {
-      if (!q) return true;
-      return s.first_message.toLowerCase().includes(q)
-        || s.user_messages.some(m => m.toLowerCase().includes(q))
-        || s.started.toLowerCase().includes(q);
+      if (!hasQuery) return true;
+      return searchMatch(s.first_message, q)
+        || s.user_messages.some(m => searchMatch(m, q))
+        || searchMatch(s.started, q);
     });
 
-    const memoryMatch = q && project.memory_files && project.memory_files.some(
-      mf => mf.content.toLowerCase().includes(q) || mf.name.toLowerCase().includes(q)
+    const memoryMatch = hasQuery && project.memory_files && project.memory_files.some(
+      mf => searchMatch(mf.content, q) || searchMatch(mf.name, q)
     );
-    const claudeMdMatch = q && project.claude_md && project.claude_md.toLowerCase().includes(q);
+    const claudeMdMatch = hasQuery && project.claude_md && searchMatch(project.claude_md, q);
 
     if (!nameMatch && matchingSessions.length === 0 && !memoryMatch && !claudeMdMatch) return;
     visibleCount++;
 
-    const sessionsToShow = q ? matchingSessions : project.sessions;
+    const sessionsToShow = hasQuery ? matchingSessions : project.sessions;
     const hasMemory = project.memory_files && project.memory_files.length > 0;
     const hasClaudeMd = !!project.claude_md;
     const hasTabs = hasMemory || hasClaudeMd;
@@ -502,7 +580,7 @@ function render(query) {
       });
     });
 
-    if (q) {
+    if (hasQuery) {
       card.classList.add('expanded');
       const sessionsDiv = card.querySelector('.project-sessions');
       if (matchingSessions.length === 0 && (memoryMatch || claudeMdMatch)) {
@@ -522,8 +600,16 @@ function render(query) {
   noResults.style.display = visibleCount === 0 ? 'block' : 'none';
 }
 
+const searchClear = document.getElementById('search-clear');
 searchInput.addEventListener('input', (e) => {
+  searchClear.style.display = e.target.value ? 'block' : 'none';
   render(e.target.value);
+});
+searchClear.addEventListener('click', () => {
+  searchInput.value = '';
+  searchClear.style.display = 'none';
+  render('');
+  searchInput.focus();
 });
 
 async function fetchData() {
