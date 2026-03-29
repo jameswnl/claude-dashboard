@@ -467,6 +467,15 @@ def get_html():
     font-weight: 400;
     margin-left: 8px;
   }
+  .marketplace-badge {
+    font-size: 10px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 8px;
+    font-weight: 500;
+  }
   .skills-group-count {
     background: var(--surface2);
     color: var(--text-dim);
@@ -859,9 +868,10 @@ function renderSkills(query) {
       if (items || !hasQuery) {
         const sourceLink = p.source_url ? `<a href="${escapeHtml(p.source_url)}" target="_blank" class="source-link" title="${escapeHtml(p.source_url)}">source</a>` : '';
         const desc = p.description ? `<span class="plugin-desc">${escapeHtml(p.description)}</span>` : '';
+        const marketplace = p.marketplace ? `<span class="marketplace-badge">${escapeHtml(p.marketplace)}</span>` : '';
         pluginsHtml += `<div class="skills-group">
           <div class="skills-group-header">
-            <span>${highlightText(p.name, q)} ${sourceLink} ${desc}</span>
+            <span>${highlightText(p.name, q)} ${marketplace} ${sourceLink} ${desc}</span>
             <span class="skills-group-count">${p.skills.length} skill${p.skills.length !== 1 ? 's' : ''}</span>
           </div>
           <div class="skills-group-body">${items || renderSkillGroup(p.name, p.skills, '')}</div>
