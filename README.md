@@ -66,6 +66,18 @@ The menu bar icon (`C>_`) lets you start/stop the server and open the dashboard 
 uv run pytest
 ```
 
+## Security
+
+The dashboard is a **local-only** tool designed for single-user use on your own machine.
+
+- **Binds to `127.0.0.1` only** — not accessible from the network
+- **Per-launch auth token** — a random token is generated each time the server starts; all API requests require it
+- **Host header validation** — rejects requests with non-localhost Host headers (DNS rebinding protection)
+- **Origin validation** — POST requests are checked for valid Origin headers (CSRF protection)
+- **Session validation** — the resume endpoint verifies session/project exist in the dataset before acting
+- **Secret masking** — MCP server credentials (auth tokens, API keys, cookies) are masked in the UI
+- **CI hardened** — all GitHub Actions pinned to commit SHAs, minimal write permissions
+
 ## How it works
 
 - Polls `~/.claude/projects/` every 10 minutes for file changes (manual refresh also available)
