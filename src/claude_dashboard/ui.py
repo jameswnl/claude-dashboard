@@ -1,7 +1,7 @@
 """HTML/CSS/JS template for the dashboard UI."""
 
 
-def get_html():
+def get_html(auth_token=""):
     return """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -632,6 +632,8 @@ def get_html():
 </div>
 
 <script>
+const AUTH_TOKEN = '__AUTH_TOKEN__';
+const authHeaders = {'Authorization': 'Bearer ' + AUTH_TOKEN};
 let DATA = [];
 let SKILLS = {};
 let MCP = {};
@@ -856,7 +858,7 @@ function render(query) {
         try {
           const resp = await fetch('/api/resume', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', ...authHeaders},
             body: JSON.stringify({session_id: sessionId, dirname: dirname})
           });
           const result = await resp.json();
@@ -1155,7 +1157,7 @@ function renderMcp(query) {
 }
 
 async function fetchData() {
-  const resp = await fetch('/api/data');
+  const resp = await fetch('/api/data', {headers: authHeaders});
   const result = await resp.json();
   if (result.version !== currentVersion) {
     currentVersion = result.version;
@@ -1174,7 +1176,7 @@ refreshBtn.addEventListener('click', async () => {
   refreshBtn.classList.add('loading');
   refreshBtn.textContent = 'Refreshing...';
   try {
-    await fetch('/api/refresh', { method: 'POST' });
+    await fetch('/api/refresh', { method: 'POST', headers: authHeaders });
     await fetchData();
   } catch (e) {}
   refreshBtn.classList.remove('loading');
@@ -1185,4 +1187,4 @@ refreshBtn.addEventListener('click', async () => {
 fetchData();
 </script>
 </body>
-</html>"""
+</html>""".replace("__AUTH_TOKEN__", auth_token)
