@@ -170,14 +170,6 @@ def get_html():
     color: var(--accent2);
     font-family: 'SF Mono', 'Fira Code', monospace;
   }
-  .session-count {
-    background: var(--surface2);
-    color: var(--text-dim);
-    padding: 4px 10px;
-    border-radius: 12px;
-    font-size: 12px;
-    white-space: nowrap;
-  }
   .project-sessions {
     display: none;
     border-top: 1px solid var(--border);
@@ -270,16 +262,6 @@ def get_html():
     border-radius: 2px;
     padding: 0 1px;
   }
-  .memory-badge {
-    display: inline-block;
-    background: rgba(139, 196, 160, 0.2);
-    color: var(--accent3);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    margin-left: 8px;
-    cursor: pointer;
-  }
   .memory-section {
     display: none;
     border-top: 1px solid var(--border);
@@ -338,15 +320,6 @@ def get_html():
     color: var(--accent);
     border-bottom-color: var(--accent);
   }
-  .claude-md-badge {
-    display: inline-block;
-    background: rgba(124, 157, 212, 0.2);
-    color: var(--accent2);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    margin-left: 8px;
-  }
   .claude-md-section {
     display: none;
     border-top: 1px solid var(--border);
@@ -360,15 +333,6 @@ def get_html():
   }
   .project-card.show-skills .project-skills-section {
     display: block;
-  }
-  .skills-badge {
-    display: inline-block;
-    background: rgba(212, 165, 116, 0.2);
-    color: var(--accent);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    margin-left: 8px;
   }
   .refresh-btn {
     padding: 8px 16px;
@@ -638,26 +602,19 @@ function render(query) {
     const hasMemory = project.memory_files && project.memory_files.length > 0;
     const hasClaudeMd = !!project.claude_md;
     const hasSkills = project.skills && project.skills.length > 0;
-    const hasTabs = hasMemory || hasClaudeMd || hasSkills;
 
     const card = document.createElement('div');
     card.className = 'project-card';
     card.innerHTML = `
       <div class="project-header">
         <span class="project-name">${highlightText(project.name, q)}</span>
-        <span>
-          ${hasSkills ? '<span class="skills-badge">' + project.skills.length + ' skill' + (project.skills.length !== 1 ? 's' : '') + '</span>' : ''}
-          ${hasClaudeMd ? '<span class="claude-md-badge">CLAUDE.md</span>' : ''}
-          ${hasMemory ? '<span class="memory-badge">' + project.memory_files.length + ' memory</span>' : ''}
-          <span class="session-count">${sessionsToShow.length} session${sessionsToShow.length !== 1 ? 's' : ''}</span>
-        </span>
       </div>
-      ${hasTabs ? `<div class="tab-bar">
-        <button class="tab-btn active" data-tab="sessions">Sessions</button>
-        ${hasMemory ? '<button class="tab-btn" data-tab="memory">Memory</button>' : ''}
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="sessions">Sessions (${sessionsToShow.length})</button>
+        ${hasMemory ? '<button class="tab-btn" data-tab="memory">Memory (' + project.memory_files.length + ')</button>' : ''}
         ${hasClaudeMd ? '<button class="tab-btn" data-tab="claude-md">CLAUDE.md</button>' : ''}
-        ${hasSkills ? '<button class="tab-btn" data-tab="skills">Skills</button>' : ''}
-      </div>` : ''}
+        ${hasSkills ? '<button class="tab-btn" data-tab="skills">Skills (' + project.skills.length + ')</button>' : ''}
+      </div>
       <div class="project-sessions">
         ${sessionsToShow.map((s, si) => `
           <div class="session-item" data-si="${si}">
@@ -694,6 +651,24 @@ function render(query) {
       </div>` : ''}
     `;
 
+    function switchTab(tab) {
+      card.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      card.classList.remove('show-memory', 'show-claude-md', 'show-skills');
+      const sessionsDiv = card.querySelector('.project-sessions');
+      if (tab === 'memory') {
+        card.classList.add('show-memory');
+        sessionsDiv.style.display = 'none';
+      } else if (tab === 'claude-md') {
+        card.classList.add('show-claude-md');
+        sessionsDiv.style.display = 'none';
+      } else if (tab === 'skills') {
+        card.classList.add('show-skills');
+        sessionsDiv.style.display = 'none';
+      } else {
+        sessionsDiv.style.display = 'block';
+      }
+    }
+
     card.querySelector('.project-header').addEventListener('click', () => {
       card.classList.toggle('expanded');
     });
@@ -701,23 +676,7 @@ function render(query) {
     card.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const tab = btn.dataset.tab;
-        card.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        card.classList.remove('show-memory', 'show-claude-md', 'show-skills');
-        const sessionsDiv = card.querySelector('.project-sessions');
-        if (tab === 'memory') {
-          card.classList.add('show-memory');
-          sessionsDiv.style.display = 'none';
-        } else if (tab === 'claude-md') {
-          card.classList.add('show-claude-md');
-          sessionsDiv.style.display = 'none';
-        } else if (tab === 'skills') {
-          card.classList.add('show-skills');
-          sessionsDiv.style.display = 'none';
-        } else {
-          sessionsDiv.style.display = 'block';
-        }
+        switchTab(btn.dataset.tab);
       });
     });
 
