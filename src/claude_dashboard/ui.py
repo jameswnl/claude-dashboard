@@ -532,6 +532,35 @@ def get_html():
   .skill-item.expanded .skill-content {
     display: block;
   }
+  .mcp-server {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mcp-server:last-child {
+    border-bottom: none;
+  }
+  .mcp-server-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent3);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .mcp-server-type {
+    font-size: 11px;
+    color: var(--accent2);
+    border: 1px solid var(--accent2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 8px;
+    font-weight: 500;
+  }
+  .mcp-server-detail {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    word-break: break-all;
+  }
 </style>
 </head>
 <body>
@@ -553,6 +582,7 @@ def get_html():
 <div class="view-tabs">
   <button class="view-tab active" id="view-projects">Projects</button>
   <button class="view-tab" id="view-skills">Skills</button>
+  <button class="view-tab" id="view-mcp">MCP Servers</button>
 </div>
 
 <div class="container" id="projects-view">
@@ -564,9 +594,14 @@ def get_html():
   <div id="skills-content"></div>
 </div>
 
+<div class="container" id="mcp-view" style="display:none">
+  <div id="mcp-content"></div>
+</div>
+
 <script>
 let DATA = [];
 let SKILLS = {};
+let MCP = {};
 let currentVersion = 0;
 let caseSensitive = false;
 let fullWord = false;
@@ -793,36 +828,40 @@ searchInput.addEventListener('input', (e) => {
   searchClear.style.display = e.target.value ? 'block' : 'none';
   render(e.target.value);
   if (currentView === 'skills') renderSkills(e.target.value);
+  if (currentView === 'mcp') renderMcp(e.target.value);
 });
 searchClear.addEventListener('click', () => {
   searchInput.value = '';
   searchClear.style.display = 'none';
   render('');
   if (currentView === 'skills') renderSkills('');
+  if (currentView === 'mcp') renderMcp('');
   searchInput.focus();
 });
 
 // View switching
 const viewProjects = document.getElementById('view-projects');
 const viewSkills = document.getElementById('view-skills');
+const viewMcp = document.getElementById('view-mcp');
 const projectsView = document.getElementById('projects-view');
 const skillsView = document.getElementById('skills-view');
+const mcpView = document.getElementById('mcp-view');
+const viewTabs = [viewProjects, viewSkills, viewMcp];
+const views = {projects: projectsView, skills: skillsView, mcp: mcpView};
 
-viewProjects.addEventListener('click', () => {
-  currentView = 'projects';
-  viewProjects.classList.add('active');
-  viewSkills.classList.remove('active');
-  projectsView.style.display = '';
-  skillsView.style.display = 'none';
-});
-viewSkills.addEventListener('click', () => {
-  currentView = 'skills';
-  viewSkills.classList.add('active');
-  viewProjects.classList.remove('active');
-  projectsView.style.display = 'none';
-  skillsView.style.display = '';
-  renderSkills(searchInput.value);
-});
+function switchView(name) {
+  currentView = name;
+  viewTabs.forEach(t => t.classList.remove('active'));
+  Object.values(views).forEach(v => v.style.display = 'none');
+  views[name].style.display = '';
+  if (name === 'projects') viewProjects.classList.add('active');
+  else if (name === 'skills') { viewSkills.classList.add('active'); renderSkills(searchInput.value); }
+  else if (name === 'mcp') { viewMcp.classList.add('active'); renderMcp(searchInput.value); }
+}
+
+viewProjects.addEventListener('click', () => switchView('projects'));
+viewSkills.addEventListener('click', () => switchView('skills'));
+viewMcp.addEventListener('click', () => switchView('mcp'));
 
 function renderSkillGroup(title, skills, query) {
   const filtered = query
@@ -943,6 +982,87 @@ function renderSkills(query) {
   });
 }
 
+function renderMcpServers(servers, query) {
+  return servers.map(s => {
+    const q = query || '';
+    const detail = s.url ? s.url : s.command ? (Array.isArray(s.args) ? s.command + ' ' + s.args.join(' ') : s.command) : '';
+    return `<div class="mcp-server">
+      <span class="mcp-server-name">${highlightText(s.name, q)}</span>
+      <span class="mcp-server-type">${escapeHtml(s.type)}</span>
+      ${detail ? `<div class="mcp-server-detail">${highlightText(detail, q)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderMcp(query) {
+  const container = document.getElementById('mcp-content');
+  const q = query || '';
+  let html = '';
+
+  const userServers = MCP.user || [];
+  const projectServers = MCP.projects || [];
+
+  // Summary
+  const userCount = userServers.length;
+  const projectCount = projectServers.reduce((s, p) => s + p.servers.length, 0);
+  let summaryItems = [];
+  if (userCount > 0) summaryItems.push(`<a class="skills-summary-item" href="#mcp-user"><span class="skills-summary-count">${userCount}</span>User</a>`);
+  if (projectCount > 0) summaryItems.push(`<a class="skills-summary-item" href="#mcp-projects"><span class="skills-summary-count">${projectCount}</span>Project</a>`);
+  if (summaryItems.length > 0) html += `<div class="skills-summary">${summaryItems.join('')}</div>`;
+
+  // User servers
+  if (userCount > 0) {
+    const filtered = q ? userServers.filter(s => searchMatch(s.name, q) || searchMatch(s.url || '', q) || searchMatch(s.command || '', q)) : userServers;
+    if (filtered.length > 0) {
+      html += `<div class="skills-section" id="mcp-user">
+        <div class="skills-section-title">User MCP Servers <span style="color:var(--text-dim);font-size:13px;font-weight:400">(${userCount})</span></div>
+        <div class="skills-group expanded"><div class="skills-group-body" style="display:block">${renderMcpServers(filtered, q)}</div></div>
+      </div>`;
+    }
+  }
+
+  // Project servers
+  if (projectServers.length > 0) {
+    let projectsHtml = '';
+    projectServers.forEach(p => {
+      const filtered = q ? p.servers.filter(s => searchMatch(s.name, q) || searchMatch(p.name, q) || searchMatch(s.url || '', q) || searchMatch(s.command || '', q)) : p.servers;
+      if (filtered.length > 0) {
+        projectsHtml += `<div class="skills-group">
+          <div class="skills-group-header">
+            <span>${highlightText(p.name, q)}</span>
+            <span class="skills-group-count">${p.servers.length} server${p.servers.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="skills-group-body">${renderMcpServers(filtered, q)}</div>
+        </div>`;
+      }
+    });
+    if (projectsHtml) {
+      html += `<div class="skills-section" id="mcp-projects">
+        <div class="skills-section-title">Project MCP Servers <span style="color:var(--text-dim);font-size:13px;font-weight:400">(${projectCount} across ${projectServers.length} projects)</span></div>
+        ${projectsHtml}
+      </div>`;
+    }
+  }
+
+  container.innerHTML = html || '<div class="no-results">No MCP servers configured.</div>';
+
+  // Click handlers for group headers
+  container.querySelectorAll('.skills-group-header').forEach(header => {
+    header.addEventListener('click', () => {
+      header.parentElement.classList.toggle('expanded');
+    });
+  });
+
+  // Smooth scroll for summary links
+  container.querySelectorAll('.skills-summary-item').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = document.querySelector(link.getAttribute('href'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
 async function fetchData() {
   const resp = await fetch('/api/data');
   const result = await resp.json();
@@ -950,8 +1070,10 @@ async function fetchData() {
     currentVersion = result.version;
     DATA = result.data;
     SKILLS = result.skills || {};
+    MCP = result.mcp || {};
     render(searchInput.value);
     if (currentView === 'skills') renderSkills(searchInput.value);
+    if (currentView === 'mcp') renderMcp(searchInput.value);
   }
 }
 

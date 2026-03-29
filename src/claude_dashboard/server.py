@@ -21,7 +21,7 @@ from pathlib import Path
 from datetime import datetime
 
 from . import data as _data
-from .data import collect_data, collect_all_skills, get_dir_fingerprint, PROJECTS_DIR
+from .data import collect_data, collect_all_skills, collect_mcp_servers, get_dir_fingerprint, PROJECTS_DIR
 from .data import extract_memory_files, extract_sessions
 from .ui import get_html
 from .utils import (
@@ -44,20 +44,23 @@ class DashboardState:
         self.lock = threading.Lock()
         self.data_json = "[]"
         self.skills_json = "{}"
+        self.mcp_json = "{}"
         self.version = 0
         self.refresh()
 
     def refresh(self):
         data = collect_data()
         skills = collect_all_skills()
+        mcp = collect_mcp_servers()
         with self.lock:
             self.data_json = json.dumps(data)
             self.skills_json = json.dumps(skills)
+            self.mcp_json = json.dumps(mcp)
             self.version += 1
 
     def get(self):
         with self.lock:
-            return self.data_json, self.skills_json, self.version
+            return self.data_json, self.skills_json, self.mcp_json, self.version
 
 
 state = None
@@ -80,7 +83,7 @@ def watcher_thread():
             if fp != last_fp:
                 last_fp = fp
                 get_state().refresh()
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Data refreshed (v{get_state().get()[1]})")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Data refreshed (v{get_state().get()[-1]})")
         except Exception as e:
             print(f"Watcher error: {e}")
 
@@ -95,11 +98,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(get_html().encode())
         elif self.path.startswith("/api/data"):
-            data_json, skills_json, version = get_state().get()
+            data_json, skills_json, mcp_json, version = get_state().get()
             response = json.dumps({
                 "version": version,
                 "data": json.loads(data_json),
                 "skills": json.loads(skills_json),
+                "mcp": json.loads(mcp_json),
             })
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

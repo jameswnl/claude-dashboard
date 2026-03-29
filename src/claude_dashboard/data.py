@@ -183,6 +183,62 @@ def collect_all_skills():
     return result
 
 
+def _read_mcp_servers(filepath):
+    """Read MCP server configs from a JSON file."""
+    try:
+        data = json.loads(filepath.read_text(errors="replace"))
+        servers = data.get("mcpServers", {})
+        if not isinstance(servers, dict):
+            return {}
+        result = {}
+        for name, cfg in servers.items():
+            if not isinstance(cfg, dict):
+                continue
+            entry = {"name": name, "type": cfg.get("type", "unknown")}
+            if "url" in cfg:
+                entry["url"] = cfg["url"]
+            if "command" in cfg:
+                entry["command"] = cfg["command"]
+            if "args" in cfg:
+                entry["args"] = cfg["args"]
+            result[name] = entry
+        return result
+    except Exception:
+        return {}
+
+
+def collect_mcp_servers():
+    """Collect MCP servers from user-level and project-level configs."""
+    result = {"user": [], "projects": []}
+
+    # User-level: ~/.claude.json
+    user_config = Path.home() / ".claude.json"
+    user_servers = _read_mcp_servers(user_config)
+    result["user"] = list(user_servers.values())
+
+    # Project-level: <project_path>/.mcp.json
+    if PROJECTS_DIR.is_dir():
+        seen = set()
+        for project_dir in sorted(PROJECTS_DIR.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            project_path = dirname_to_path(project_dir.name)
+            if project_path in seen:
+                continue
+            seen.add(project_path)
+            mcp_file = Path(project_path) / ".mcp.json"
+            if mcp_file.is_file():
+                servers = _read_mcp_servers(mcp_file)
+                if servers:
+                    result["projects"].append({
+                        "name": project_display_name(project_dir.name),
+                        "dirname": project_dir.name,
+                        "servers": list(servers.values()),
+                    })
+
+    return result
+
+
 def collect_data():
     projects_data = []
     if not PROJECTS_DIR.is_dir():

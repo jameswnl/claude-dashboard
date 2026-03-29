@@ -13,9 +13,11 @@ from claude_dashboard.server import (
 from claude_dashboard.data import (
     _extract_commands_from_dir,
     _extract_plugin_meta,
+    _read_mcp_servers,
     _read_skill_file,
     collect_all_skills,
     collect_data,
+    collect_mcp_servers,
     extract_memory_files,
     extract_sessions,
     get_dir_fingerprint,
@@ -361,7 +363,7 @@ def test_collect_data_includes_memory(tmp_path, monkeypatch):
 def test_dashboard_state(tmp_path, monkeypatch):
     monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     s = DashboardState()
-    data_json, skills_json, version = s.get()
+    data_json, skills_json, mcp_json, version = s.get()
     assert version == 1
     assert json.loads(data_json) == []
 
@@ -373,7 +375,7 @@ def test_dashboard_state(tmp_path, monkeypatch):
     (proj / "s.jsonl").write_text(json.dumps(d))
     s.refresh()
 
-    data_json, skills_json, version = s.get()
+    data_json, skills_json, mcp_json, version = s.get()
     assert version == 2
     data = json.loads(data_json)
     assert len(data) == 1
@@ -1368,3 +1370,117 @@ def test_extract_project_skills_skips_user_commands(tmp_path, monkeypatch):
     from claude_dashboard.data import extract_project_skills
     result = extract_project_skills(dirname)
     assert result == []
+
+
+# --- MCP Servers ---
+
+def test_read_mcp_servers_valid(tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({
+        "mcpServers": {
+            "jira": {"type": "http", "url": "https://mcp.atlassian.com/v1/mcp"},
+            "local": {"type": "stdio", "command": "node", "args": ["server.js"]},
+        }
+    }))
+    result = _read_mcp_servers(config)
+    assert len(result) == 2
+    assert result["jira"]["type"] == "http"
+    assert result["jira"]["url"] == "https://mcp.atlassian.com/v1/mcp"
+    assert result["local"]["command"] == "node"
+    assert result["local"]["args"] == ["server.js"]
+
+
+def test_read_mcp_servers_no_file(tmp_path):
+    result = _read_mcp_servers(tmp_path / "nonexistent.json")
+    assert result == {}
+
+
+def test_read_mcp_servers_no_mcp_key(tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"other": "stuff"}))
+    result = _read_mcp_servers(config)
+    assert result == {}
+
+
+def test_read_mcp_servers_invalid_json(tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text("not json")
+    result = _read_mcp_servers(config)
+    assert result == {}
+
+
+def test_read_mcp_servers_skips_non_dict_entries(tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"mcpServers": {"good": {"type": "http"}, "bad": "string"}}))
+    result = _read_mcp_servers(config)
+    assert len(result) == 1
+    assert "good" in result
+
+
+def test_collect_mcp_servers_user_level(tmp_path, monkeypatch):
+    claude_json = tmp_path / ".claude.json"
+    claude_json.write_text(json.dumps({
+        "mcpServers": {
+            "jira": {"type": "http", "url": "https://example.com/mcp"},
+        }
+    }))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_mcp_servers()
+    assert len(result["user"]) == 1
+    assert result["user"][0]["name"] == "jira"
+
+
+def test_collect_mcp_servers_project_level(tmp_path, monkeypatch):
+    # Set up project with .mcp.json
+    project_path = tmp_path / "myproject"
+    project_path.mkdir()
+    (project_path / ".mcp.json").write_text(json.dumps({
+        "mcpServers": {"local-mcp": {"type": "stdio", "command": "mcp-server"}}
+    }))
+
+    # Projects dir with entry pointing to project_path
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    parts = str(project_path).lstrip("/").split("/")
+    project_dirname = "-" + "-".join(parts)
+    (projects_dir / project_dirname).mkdir()
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", projects_dir)
+    result = collect_mcp_servers()
+    assert len(result["projects"]) == 1
+    assert result["projects"][0]["servers"][0]["name"] == "local-mcp"
+
+
+def test_collect_mcp_servers_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_mcp_servers()
+    assert result["user"] == []
+    assert result["projects"] == []
+
+
+def test_api_data_includes_mcp(tmp_path, monkeypatch):
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", tmp_path / "claude")
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/data")
+    body = json.loads(resp.read())
+    assert "mcp" in body
+    assert "user" in body["mcp"]
+    assert "projects" in body["mcp"]
+    server.server_close()
+
+
+def test_get_html_has_mcp_view():
+    html = get_html()
+    assert "view-mcp" in html
+    assert "mcp-content" in html
