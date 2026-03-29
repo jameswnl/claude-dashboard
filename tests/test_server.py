@@ -8,6 +8,7 @@ from claude_dashboard.server import (
     DashboardHandler,
     DashboardState,
     get_state,
+    watcher_thread,
 )
 from claude_dashboard.data import (
     _extract_commands_from_dir,
@@ -1081,3 +1082,243 @@ def test_collect_all_skills_plugins_include_meta(tmp_path, monkeypatch):
     assert plugin["marketplace"] == "official"
     assert plugin["source_url"] == "https://github.com/user/test-plugin"
     assert plugin["description"] == "Test Plugin"
+
+
+# --- data.py: _extract_plugin_meta README read exception (lines 105-106) ---
+
+def test_extract_plugin_meta_readme_read_error(tmp_path, monkeypatch):
+    """If reading README.md raises, meta should still have name."""
+    plugin_dir = tmp_path / "broken-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "README.md").write_text("content")
+    original_read_text = Path.read_text
+    def patched_read_text(self, *args, **kwargs):
+        if self.name == "README.md" and "broken-plugin" in str(self):
+            raise PermissionError("no access")
+        return original_read_text(self, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", patched_read_text)
+    meta = _extract_plugin_meta(plugin_dir)
+    assert meta["name"] == "broken-plugin"
+    assert "source_url" not in meta
+    assert "description" not in meta
+
+
+# --- data.py: get_dir_fingerprint CLAUDE.md stat OSError (lines 229-230) ---
+
+def test_get_dir_fingerprint_claude_md_stat_oserror(tmp_path, monkeypatch):
+    """OSError when stat-ing CLAUDE.md should be silently handled."""
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    project_entry = tmp_path / "-tmp-testfp"
+    project_entry.mkdir()
+
+    import os
+    test_proj = Path("/tmp/testfp")
+    test_proj.mkdir(exist_ok=True)
+    claude_md = test_proj / "CLAUDE.md"
+    claude_md.write_text("instructions")
+
+    try:
+        original_stat = Path.stat
+        def patched_stat(self, *args, **kwargs):
+            if self.name == "CLAUDE.md" and "testfp" in str(self):
+                raise OSError("stat failed")
+            return original_stat(self, *args, **kwargs)
+        monkeypatch.setattr(Path, "stat", patched_stat)
+        fp = get_dir_fingerprint()
+        assert isinstance(fp, str)
+        assert len(fp) == 32
+    finally:
+        claude_md.unlink(missing_ok=True)
+        test_proj.rmdir()
+
+
+# --- server.py: watcher_thread (lines 75-85) ---
+
+def test_watcher_thread_refresh_on_change(tmp_path, monkeypatch):
+    """watcher_thread should refresh state when fingerprint changes."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+    monkeypatch.setattr("claude_dashboard.server.POLL_INTERVAL", 0)
+
+    # Track fingerprint calls and force a change, then stop
+    call_count = [0]
+    original_fp = get_dir_fingerprint
+    def mock_fp():
+        call_count[0] += 1
+        if call_count[0] <= 1:
+            return "aaa"
+        return "bbb"
+    monkeypatch.setattr("claude_dashboard.server.get_dir_fingerprint", mock_fp)
+
+    # Make time.sleep raise after second call to break the loop
+    sleep_count = [0]
+    def mock_sleep(n):
+        sleep_count[0] += 1
+        if sleep_count[0] > 1:
+            raise KeyboardInterrupt("stop")
+    monkeypatch.setattr("claude_dashboard.server.time.sleep", mock_sleep)
+
+    try:
+        watcher_thread()
+    except KeyboardInterrupt:
+        pass
+    # Should have called fingerprint at least twice and state version should increase
+    assert call_count[0] >= 2
+
+
+def test_watcher_thread_handles_exception(tmp_path, monkeypatch):
+    """watcher_thread should handle exceptions gracefully."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+    monkeypatch.setattr("claude_dashboard.server.POLL_INTERVAL", 0)
+
+    call_count = [0]
+    def mock_fp():
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return "aaa"
+        raise RuntimeError("boom")
+    monkeypatch.setattr("claude_dashboard.server.get_dir_fingerprint", mock_fp)
+
+    sleep_count = [0]
+    def mock_sleep(n):
+        sleep_count[0] += 1
+        if sleep_count[0] > 1:
+            raise KeyboardInterrupt("stop")
+    monkeypatch.setattr("claude_dashboard.server.time.sleep", mock_sleep)
+
+    try:
+        watcher_thread()
+    except KeyboardInterrupt:
+        pass
+    assert call_count[0] >= 2
+
+
+# --- server.py: main() CLI arg parsing (lines 138-174) ---
+
+def test_main_port_flag(tmp_path, monkeypatch):
+    """main() should parse --port flag."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+    monkeypatch.setattr("sys.argv", ["claude-dashboard", "--port", "9999"])
+
+    # Mock HTTPServer to capture port and avoid actual serving
+    created = {}
+    class MockServer:
+        def __init__(self, addr, handler):
+            created["addr"] = addr
+            self.server_address = addr
+        def serve_forever(self):
+            raise KeyboardInterrupt()
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
+    monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+
+    from claude_dashboard.server import main
+    main()
+    assert created["addr"] == ("127.0.0.1", 9999)
+
+
+def test_main_projects_dir_flag(tmp_path, monkeypatch):
+    """main() should parse --projects-dir flag."""
+    import claude_dashboard.server as mod
+    import claude_dashboard.data as data_mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+    monkeypatch.setattr("sys.argv", ["claude-dashboard", "--projects-dir", "/custom/path"])
+
+    class MockServer:
+        def __init__(self, addr, handler):
+            self.server_address = addr
+        def serve_forever(self):
+            raise KeyboardInterrupt()
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
+    monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+
+    from claude_dashboard.server import main
+    main()
+    assert str(data_mod.PROJECTS_DIR) == "/custom/path"
+
+
+def test_main_positional_port(tmp_path, monkeypatch):
+    """main() should accept a positional port number."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+    monkeypatch.setattr("sys.argv", ["claude-dashboard", "7777"])
+
+    created = {}
+    class MockServer:
+        def __init__(self, addr, handler):
+            created["addr"] = addr
+            self.server_address = addr
+        def serve_forever(self):
+            raise KeyboardInterrupt()
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
+    monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+
+    from claude_dashboard.server import main
+    main()
+    assert created["addr"] == ("127.0.0.1", 7777)
+
+
+def test_main_unknown_arg(tmp_path, monkeypatch):
+    """main() should skip unknown args."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+    monkeypatch.setattr("sys.argv", ["claude-dashboard", "--unknown", "stuff"])
+
+    created = {}
+    class MockServer:
+        def __init__(self, addr, handler):
+            created["addr"] = addr
+            self.server_address = addr
+        def serve_forever(self):
+            raise KeyboardInterrupt()
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
+    monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+
+    from claude_dashboard.server import main
+    main()
+    # Should use default port
+    assert created["addr"] == ("127.0.0.1", 8420)
+
+
+def test_main_webbrowser_exception(tmp_path, monkeypatch):
+    """main() should handle webbrowser.open failure gracefully."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+    monkeypatch.setattr("sys.argv", ["claude-dashboard"])
+
+    class MockServer:
+        def __init__(self, addr, handler):
+            self.server_address = addr
+        def serve_forever(self):
+            raise KeyboardInterrupt()
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr("claude_dashboard.server.HTTPServer", MockServer)
+    monkeypatch.setattr("claude_dashboard.server.threading.Thread", lambda **kw: type("T", (), {"start": lambda self: None})())
+
+    import webbrowser
+    monkeypatch.setattr(webbrowser, "open", lambda url: (_ for _ in ()).throw(RuntimeError("no browser")))
+
+    from claude_dashboard.server import main
+    main()  # Should not raise
