@@ -20,6 +20,7 @@ from claude_dashboard.utils import (
     dirname_to_path,
     find_claude_md,
     format_date,
+    open_terminal_with_session,
     project_display_name,
     read_claude_md,
 )
@@ -439,3 +440,136 @@ def test_handler_404(tmp_path, monkeypatch):
     except urllib.error.HTTPError as e:
         assert e.code == 404
     server.server_close()
+
+
+# --- dirname_to_path with filesystem probing ---
+
+def test_dirname_to_path_empty():
+    assert dirname_to_path("-") == "/"
+
+
+def test_dirname_to_path_probes_filesystem(tmp_path, monkeypatch):
+    """dirname_to_path should find hyphenated directories via filesystem probing."""
+    # Create a hyphenated directory
+    (tmp_path / "my-project").mkdir()
+    # Build a dirname that includes tmp_path
+    parts = str(tmp_path).lstrip("/").split("/")
+    dirname = "-" + "-".join(parts) + "-my-project"
+    result = dirname_to_path(dirname)
+    assert result == str(tmp_path / "my-project")
+
+
+# --- open_terminal_with_session ---
+
+def test_open_terminal_with_session_nonexistent_dir(monkeypatch):
+    """When directory doesn't exist, should still return ok (runs without cd)."""
+    # Mock subprocess.run to capture the call
+    calls = []
+    def mock_run(*args, **kwargs):
+        calls.append(args)
+        raise Exception("no osascript in test")
+    monkeypatch.setattr("claude_dashboard.utils.subprocess.run", mock_run)
+    result = open_terminal_with_session("test-session-id", "-nonexistent-path")
+    # Should have tried both iTerm and Terminal, both failed
+    assert result["ok"] is False
+    assert "error" in result
+    assert len(calls) == 2  # tried iTerm2 and Terminal
+
+
+def test_open_terminal_with_session_success(tmp_path, monkeypatch):
+    """When osascript succeeds, should return ok."""
+    import subprocess as sp
+    def mock_run(*args, **kwargs):
+        return sp.CompletedProcess(args=args, returncode=0)
+    monkeypatch.setattr("claude_dashboard.utils.subprocess.run", mock_run)
+    # Use a dirname that resolves to tmp_path
+    parts = str(tmp_path).lstrip("/").split("/")
+    dirname = "-" + "-".join(parts)
+    result = open_terminal_with_session("test-session", dirname)
+    assert result["ok"] is True
+
+
+# --- POST /api/refresh ---
+
+def test_handler_post_refresh(tmp_path, monkeypatch):
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/refresh", method="POST", data=b""
+    )
+    resp = urllib.request.urlopen(req)
+    body = json.loads(resp.read())
+    assert resp.status == 200
+    assert body["ok"] is True
+    server.server_close()
+
+
+# --- POST /api/resume ---
+
+def test_handler_post_resume(tmp_path, monkeypatch):
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    # Mock open_terminal_with_session
+    monkeypatch.setattr(
+        "claude_dashboard.server.open_terminal_with_session",
+        lambda sid, dn: {"ok": True},
+    )
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    data = json.dumps({"session_id": "abc", "dirname": "-test"}).encode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/resume",
+        method="POST",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    resp = urllib.request.urlopen(req)
+    body = json.loads(resp.read())
+    assert resp.status == 200
+    assert body["ok"] is True
+    server.server_close()
+
+
+# --- POST 404 ---
+
+def test_handler_post_404(tmp_path, monkeypatch):
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/nonexistent", method="POST", data=b""
+    )
+    try:
+        urllib.request.urlopen(req)
+        assert False, "Should have raised"
+    except urllib.error.HTTPError as e:
+        assert e.code == 404
+    server.server_close()
+
+
+# --- get_html search features ---
+
+def test_get_html_has_search_toggles():
+    html = get_html()
+    assert "toggle-case" in html
+    assert "toggle-word" in html
+    assert "search-clear" in html
