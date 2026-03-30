@@ -1665,6 +1665,37 @@ def test_html_page_token_url_sets_cookie(tmp_path, monkeypatch):
     server.server_close()
 
 
+def test_query_token_overrides_stale_cookie(tmp_path, monkeypatch):
+    """A valid /?token=... should work even with a stale cookie."""
+    import claude_dashboard.server as mod
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(mod, "state", None)
+
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
+
+    opener = urllib.request.build_opener(NoRedirect)
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/?token={AUTH_TOKEN}",
+        headers={"Cookie": "dashboard_token=stale-old-token"},
+    )
+    try:
+        opener.open(req)
+        assert False, "Should have raised redirect"
+    except urllib.error.HTTPError as e:
+        # Should succeed (302 redirect) because query token takes priority
+        assert e.code == 302
+        cookie_header = e.headers.get("Set-Cookie", "")
+        assert "dashboard_token=" in cookie_header
+    server.server_close()
+
+
 def test_post_resume_rejects_unknown_session(tmp_path, monkeypatch):
     """POST /api/resume should reject session_id not in dataset."""
     import claude_dashboard.server as mod

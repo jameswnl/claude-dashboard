@@ -109,22 +109,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return True
 
     def _get_token(self):
-        """Extract auth token from Authorization header, cookie, or query string."""
+        """Extract auth token from Authorization header, query string, or cookie."""
         # Authorization header (used by JS fetch)
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             return auth[7:]
+        # Query string: /?token=... (initial browser open) — checked before
+        # cookie so a new token URL always works even with a stale cookie
+        if "?" in self.path:
+            for param in self.path.split("?", 1)[1].split("&"):
+                if param.startswith("token="):
+                    return param[6:]
         # Cookie (set after initial auth via token URL)
         cookie = self.headers.get("Cookie", "")
         for part in cookie.split(";"):
             part = part.strip()
             if part.startswith("dashboard_token="):
                 return part[16:]
-        # Query string: /?token=... (initial browser open)
-        if "?" in self.path:
-            for param in self.path.split("?", 1)[1].split("&"):
-                if param.startswith("token="):
-                    return param[6:]
         return None
 
     def _check_auth(self):
