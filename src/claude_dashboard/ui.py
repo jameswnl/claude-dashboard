@@ -617,6 +617,29 @@ def get_html(auth_token=""):
   .mcp-config-masked {
     opacity: 0.6;
   }
+  .agent-meta {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+  }
+  .agent-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .agent-badge.model {
+    color: var(--accent2);
+    border-color: var(--accent2);
+  }
+  .agent-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
 </style>
 </head>
 <body>
@@ -639,6 +662,7 @@ def get_html(auth_token=""):
 <div class="view-tabs">
   <button class="view-tab active" id="view-projects">Projects</button>
   <button class="view-tab" id="view-skills">Skills</button>
+  <button class="view-tab" id="view-agents">Agents</button>
   <button class="view-tab" id="view-mcp">MCP Servers</button>
 </div>
 
@@ -651,6 +675,10 @@ def get_html(auth_token=""):
   <div id="skills-content"></div>
 </div>
 
+<div class="container" id="agents-view" style="display:none">
+  <div id="agents-content"></div>
+</div>
+
 <div class="container" id="mcp-view" style="display:none">
   <div id="mcp-content"></div>
 </div>
@@ -660,6 +688,7 @@ const AUTH_TOKEN = '__AUTH_TOKEN__';
 const authHeaders = {'Authorization': 'Bearer ' + AUTH_TOKEN};
 let DATA = [];
 let SKILLS = {};
+let AGENTS = {};
 let MCP = {};
 let currentVersion = 0;
 let caseSensitive = false;
@@ -921,6 +950,7 @@ searchInput.addEventListener('input', (e) => {
   searchClear.style.display = e.target.value ? 'block' : 'none';
   render(e.target.value);
   if (currentView === 'skills') renderSkills(e.target.value);
+  if (currentView === 'agents') renderAgents(e.target.value);
   if (currentView === 'mcp') renderMcp(e.target.value);
 });
 searchClear.addEventListener('click', () => {
@@ -928,6 +958,7 @@ searchClear.addEventListener('click', () => {
   searchClear.style.display = 'none';
   render('');
   if (currentView === 'skills') renderSkills('');
+  if (currentView === 'agents') renderAgents('');
   if (currentView === 'mcp') renderMcp('');
   searchInput.focus();
 });
@@ -935,12 +966,14 @@ searchClear.addEventListener('click', () => {
 // View switching
 const viewProjects = document.getElementById('view-projects');
 const viewSkills = document.getElementById('view-skills');
+const viewAgents = document.getElementById('view-agents');
 const viewMcp = document.getElementById('view-mcp');
 const projectsView = document.getElementById('projects-view');
 const skillsView = document.getElementById('skills-view');
+const agentsView = document.getElementById('agents-view');
 const mcpView = document.getElementById('mcp-view');
-const viewTabs = [viewProjects, viewSkills, viewMcp];
-const views = {projects: projectsView, skills: skillsView, mcp: mcpView};
+const viewTabs = [viewProjects, viewSkills, viewAgents, viewMcp];
+const views = {projects: projectsView, skills: skillsView, agents: agentsView, mcp: mcpView};
 
 function switchView(name) {
   currentView = name;
@@ -949,11 +982,13 @@ function switchView(name) {
   views[name].style.display = '';
   if (name === 'projects') viewProjects.classList.add('active');
   else if (name === 'skills') { viewSkills.classList.add('active'); renderSkills(searchInput.value); }
+  else if (name === 'agents') { viewAgents.classList.add('active'); renderAgents(searchInput.value); }
   else if (name === 'mcp') { viewMcp.classList.add('active'); renderMcp(searchInput.value); }
 }
 
 viewProjects.addEventListener('click', () => switchView('projects'));
 viewSkills.addEventListener('click', () => switchView('skills'));
+viewAgents.addEventListener('click', () => switchView('agents'));
 viewMcp.addEventListener('click', () => switchView('mcp'));
 
 function renderSkillGroup(title, skills, query) {
@@ -1075,6 +1110,78 @@ function renderSkills(query) {
   });
 }
 
+function renderAgentItem(agent, query) {
+  const q = query || '';
+  const badges = [];
+  if (agent.model) badges.push('<span class="agent-badge model">' + escapeHtml(agent.model) + '</span>');
+  if (agent.color) badges.push('<span class="agent-badge">' + escapeHtml(agent.color) + '</span>');
+  if (agent.memory) badges.push('<span class="agent-badge">memory: ' + escapeHtml(agent.memory) + '</span>');
+  const desc = agent.description ? '<div class="agent-desc">' + highlightText(agent.description.substring(0, 200), q) + '</div>' : '';
+  return `<div class="skill-item">
+    <div class="skill-name">${highlightText(agent.name, q)}</div>
+    ${badges.length > 0 ? '<div class="agent-meta">' + badges.join('') + '</div>' : ''}
+    ${desc}
+    <div class="skill-content">${highlightText(agent.body || agent.content || '', q)}</div>
+  </div>`;
+}
+
+function renderAgents(query) {
+  const container = document.getElementById('agents-content');
+  const q = query || '';
+  const hasQuery = q.length > 0;
+  let sectionsHtml = '';
+
+  const userAgents = AGENTS.user || [];
+  const projectAgents = AGENTS.projects || [];
+
+  const userCount = userAgents.length;
+  const projectAgentCount = projectAgents.reduce((s, p) => s + p.agents.length, 0);
+
+  // Summary bar
+  let summaryItems = [];
+  if (userCount > 0) summaryItems.push('<a class="skills-summary-item" href="#agents-user"><span class="skills-summary-count">' + userCount + '</span>User</a>');
+  if (projectAgentCount > 0) summaryItems.push('<a class="skills-summary-item" href="#agents-projects"><span class="skills-summary-count">' + projectAgentCount + '</span>Project</a>');
+  const summaryHtml = summaryItems.length > 0 ? '<div class="skills-summary">' + summaryItems.join('') + '</div>' : '';
+
+  // User agents
+  if (userCount > 0) {
+    const filtered = hasQuery ? userAgents.filter(a => searchMatch(a.name, q) || searchMatch(a.description || '', q) || searchMatch(a.body || '', q) || searchMatch(a.model || '', q)) : userAgents;
+    if (filtered.length > 0) {
+      sectionsHtml += '<div class="skills-section" id="agents-user"><div class="skills-section-title">User Agents <span style="color:var(--text-dim);font-size:13px;font-weight:400">(' + userCount + ')</span></div><div class="skills-group expanded"><div class="skills-group-body" style="display:block">' + filtered.map(a => renderAgentItem(a, q)).join('') + '</div></div></div>';
+    }
+  }
+
+  // Project agents
+  if (projectAgents.length > 0) {
+    let projectsHtml = '';
+    projectAgents.forEach(p => {
+      const filtered = hasQuery ? p.agents.filter(a => searchMatch(a.name, q) || searchMatch(p.name, q) || searchMatch(a.description || '', q) || searchMatch(a.body || '', q)) : p.agents;
+      if (filtered.length > 0) {
+        projectsHtml += '<div class="skills-group"><div class="skills-group-header"><span>' + highlightText(p.name, q) + '</span><span class="skills-group-count">' + p.agents.length + ' agent' + (p.agents.length !== 1 ? 's' : '') + '</span></div><div class="skills-group-body">' + filtered.map(a => renderAgentItem(a, q)).join('') + '</div></div>';
+      }
+    });
+    if (projectsHtml) {
+      sectionsHtml += '<div class="skills-section" id="agents-projects"><div class="skills-section-title">Project Agents <span style="color:var(--text-dim);font-size:13px;font-weight:400">(' + projectAgentCount + ' across ' + projectAgents.length + ' projects)</span></div>' + projectsHtml + '</div>';
+    }
+  }
+
+  container.innerHTML = (summaryHtml + sectionsHtml) || '<div class="no-results">No agents found.</div>';
+
+  container.querySelectorAll('.skills-group-header').forEach(header => {
+    header.addEventListener('click', () => { header.parentElement.classList.toggle('expanded'); });
+  });
+  container.querySelectorAll('.skill-item .skill-name').forEach(el => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); el.parentElement.classList.toggle('expanded'); });
+  });
+  container.querySelectorAll('.skills-summary-item').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = document.querySelector(link.getAttribute('href'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
 function renderMcpServerConfig(s) {
   let lines = [];
   if (s.headers) {
@@ -1187,9 +1294,11 @@ async function fetchData() {
     currentVersion = result.version;
     DATA = result.data;
     SKILLS = result.skills || {};
+    AGENTS = result.agents || {};
     MCP = result.mcp || {};
     render(searchInput.value);
     if (currentView === 'skills') renderSkills(searchInput.value);
+    if (currentView === 'agents') renderAgents(searchInput.value);
     if (currentView === 'mcp') renderMcp(searchInput.value);
   }
 }

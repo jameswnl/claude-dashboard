@@ -22,7 +22,7 @@ from pathlib import Path
 from datetime import datetime
 
 from . import data as _data
-from .data import collect_data, collect_all_skills, collect_mcp_servers, get_dir_fingerprint, PROJECTS_DIR
+from .data import collect_data, collect_all_skills, collect_all_agents, collect_mcp_servers, get_dir_fingerprint, PROJECTS_DIR
 from .data import extract_memory_files, extract_sessions
 from .ui import get_html
 from .utils import (
@@ -49,6 +49,7 @@ class DashboardState:
         self.lock = threading.Lock()
         self.data_json = "[]"
         self.skills_json = "{}"
+        self.agents_json = "{}"
         self.mcp_json = "{}"
         self.version = 0
         self.refresh()
@@ -56,16 +57,18 @@ class DashboardState:
     def refresh(self):
         data = collect_data()
         skills = collect_all_skills()
+        agents = collect_all_agents()
         mcp = collect_mcp_servers()
         with self.lock:
             self.data_json = json.dumps(data)
             self.skills_json = json.dumps(skills)
+            self.agents_json = json.dumps(agents)
             self.mcp_json = json.dumps(mcp)
             self.version += 1
 
     def get(self):
         with self.lock:
-            return self.data_json, self.skills_json, self.mcp_json, self.version
+            return self.data_json, self.skills_json, self.agents_json, self.mcp_json, self.version
 
 
 state = None
@@ -190,11 +193,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif self.path.startswith("/api/data"):
             if not self._check_auth():
                 return
-            data_json, skills_json, mcp_json, version = get_state().get()
+            data_json, skills_json, agents_json, mcp_json, version = get_state().get()
             response = json.dumps({
                 "version": version,
                 "data": json.loads(data_json),
                 "skills": json.loads(skills_json),
+                "agents": json.loads(agents_json),
                 "mcp": json.loads(mcp_json),
             })
             self.send_response(200)
