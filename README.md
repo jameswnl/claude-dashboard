@@ -39,7 +39,9 @@ uv sync
 uv run claude-dashboard
 ```
 
-Opens at http://localhost:8420. Options:
+Opens at http://localhost:8420. A new auth token is generated each launch. If you see an "unauthorized" error, clear your browser's cookies for `localhost` or use an incognito window.
+
+Options:
 
 ```bash
 uv run claude-dashboard --port 9000

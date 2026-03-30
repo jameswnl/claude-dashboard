@@ -13,6 +13,8 @@ uv run python scripts/mock_demo.py 8500    # custom port
 
 Opens your browser automatically. The token URL is also saved to `/tmp/mock_dashboard_token.txt`.
 
+**Note:** If you see `{"error": "unauthorized: invalid token"}`, clear your browser's cookies for `localhost` (or use an incognito window). A stale auth cookie from a previous session can override the new token.
+
 ### What it creates
 
 | Data | Details |
