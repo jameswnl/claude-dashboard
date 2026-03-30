@@ -1652,7 +1652,6 @@ def test_html_page_token_url_sets_cookie(tmp_path, monkeypatch):
     opener = urllib.request.build_opener(NoRedirect)
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/?token={AUTH_TOKEN}",
-        headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
     )
     try:
         opener.open(req)
