@@ -10,16 +10,30 @@ def get_html(auth_token=""):
 <title>Claude Code Dashboard</title>
 <style>
   :root {
-    --bg: #0f1117;
-    --surface: #1a1d27;
-    --surface2: #232733;
-    --border: #2d3140;
-    --text: #e4e6ef;
-    --text-dim: #8b8fa3;
-    --accent: #d4a574;
-    --accent2: #7c9dd4;
-    --accent3: #8bc4a0;
-    --search-bg: #1e2130;
+    --bg: #0d1017;
+    --surface: #161b25;
+    --surface2: #1e2433;
+    --border: #283040;
+    --text: #d5dae6;
+    --text-dim: #6c7590;
+    --accent: #e8a86b;
+    --accent2: #6daaf2;
+    --accent3: #6dd4a0;
+    --search-bg: #141924;
+    --highlight-bg: rgba(232, 168, 107, 0.18);
+  }
+  html.light {
+    --bg: #fafbfc;
+    --surface: #ffffff;
+    --surface2: #f3f4f7;
+    --border: #d8dbe4;
+    --text: #1f2328;
+    --text-dim: #636c7c;
+    --accent: #c26a25;
+    --accent2: #2563a8;
+    --accent3: #1a7f48;
+    --search-bg: #edf0f5;
+    --highlight-bg: rgba(194, 106, 37, 0.12);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -148,12 +162,18 @@ def get_html(auth_token=""):
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
-    transition: border-color 0.2s, transform 0.15s;
+    transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
     cursor: pointer;
+  }
+  html.light .project-card {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
   }
   .project-card:hover {
     border-color: var(--accent);
     transform: translateY(-2px);
+  }
+  html.light .project-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
   }
   .project-card.expanded {
     grid-column: 1 / -1;
@@ -258,7 +278,7 @@ def get_html(auth_token=""):
     font-size: 16px;
   }
   .highlight {
-    background: rgba(212, 165, 116, 0.3);
+    background: var(--highlight-bg);
     border-radius: 2px;
     padding: 0 1px;
   }
@@ -448,6 +468,9 @@ def get_html(auth_token=""):
     margin-bottom: 12px;
     overflow: hidden;
   }
+  html.light .skills-group {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
   .skills-group-header {
     padding: 12px 20px;
     font-size: 14px;
@@ -609,6 +632,7 @@ def get_html(auth_token=""):
     <button class="search-toggle" id="toggle-case" title="Case sensitive">Aa</button>
     <button class="search-toggle" id="toggle-word" title="Full word match">W</button>
   </div>
+  <button class="refresh-btn" id="theme-toggle" title="Toggle light/dark mode">Light</button>
   <button class="refresh-btn" id="refresh" title="Refresh data">Refresh</button>
 </div>
 
@@ -1181,6 +1205,19 @@ refreshBtn.addEventListener('click', async () => {
   } catch (e) {}
   refreshBtn.classList.remove('loading');
   refreshBtn.textContent = 'Refresh';
+});
+
+// Theme toggle
+const themeToggle = document.getElementById('theme-toggle');
+function applyTheme(light) {
+  document.documentElement.classList.toggle('light', light);
+  themeToggle.textContent = light ? 'Dark' : 'Light';
+}
+applyTheme(localStorage.getItem('dashboard-theme') === 'light');
+themeToggle.addEventListener('click', () => {
+  const isLight = !document.documentElement.classList.contains('light');
+  localStorage.setItem('dashboard-theme', isLight ? 'light' : 'dark');
+  applyTheme(isLight);
 });
 
 // Initial load
