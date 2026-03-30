@@ -1719,6 +1719,45 @@ def test_get_html_includes_auth_token():
     assert "AUTH_TOKEN" in html
 
 
+# --- Theme toggle ---
+
+def test_get_html_has_theme_toggle():
+    """HTML should include a theme toggle button."""
+    html = get_html()
+    assert "theme-toggle" in html
+
+
+def test_get_html_has_light_theme_css():
+    """HTML should include light theme CSS variables."""
+    html = get_html()
+    assert "html.light" in html
+
+
+def test_get_html_theme_uses_localstorage():
+    """Theme preference should persist via localStorage."""
+    html = get_html()
+    assert "dashboard-theme" in html
+    assert "localStorage" in html
+
+
+def test_get_html_has_both_color_schemes():
+    """Both dark (:root) and light (html.light) CSS variables should be defined."""
+    html = get_html()
+    # Dark mode defaults
+    assert ":root" in html
+    assert "--bg:" in html
+    assert "--surface:" in html
+    # Light mode overrides
+    assert "html.light {" in html
+
+
+def test_get_html_light_theme_card_shadows():
+    """Light mode should add box shadows to cards."""
+    html = get_html()
+    assert "html.light .project-card" in html
+    assert "box-shadow" in html
+
+
 # --- Host and Origin validation tests ---
 
 def test_rejects_invalid_host_header(tmp_path, monkeypatch):
