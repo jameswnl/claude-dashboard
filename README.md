@@ -4,7 +4,7 @@
 ![Coverage](https://raw.githubusercontent.com/jameswnl/claude-dashboard/main/coverage.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A visual dashboard for browsing Claude Code projects, sessions, memory files, and CLAUDE.md configs.
+A visual dashboard for browsing Claude Code projects, sessions, memory files, CLAUDE.md configs, skills, and MCP servers.
 
 Scans `~/.claude/projects/` and presents everything in a searchable web UI.
 
