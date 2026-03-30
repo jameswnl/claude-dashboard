@@ -21,6 +21,7 @@ Scans `~/.claude/projects/` and presents everything in a searchable web UI.
 - View MCP server configurations (user-level and per-project, with secrets masked)
 - Full-text search with case-sensitive and full-word match options
 - Auto-highlights search matches
+- Light/dark theme toggle (persists preference)
 - Resume any session directly from the dashboard (opens iTerm2 or Terminal)
 - Live auto-refresh when files change
 
