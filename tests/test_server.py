@@ -378,7 +378,7 @@ def test_collect_data_includes_memory(tmp_path, monkeypatch):
 def test_dashboard_state(tmp_path, monkeypatch):
     monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     s = DashboardState()
-    data_json, skills_json, agents_json, mcp_json, version = s.get()
+    data_json, _skills_json, _agents_json, _mcp_json, version = s.get()
     assert version == 1
     assert json.loads(data_json) == []
 

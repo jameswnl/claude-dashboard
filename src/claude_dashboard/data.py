@@ -410,8 +410,8 @@ def get_dir_fingerprint():
         for project_dir in sorted(PROJECTS_DIR.iterdir()):
             if not project_dir.is_dir():
                 continue
-            real_path = "/" + project_dir.name.lstrip("-").replace("-", "/")
-            agents_dir = Path(real_path) / ".claude" / "agents"
+            project_path = dirname_to_path(project_dir.name)
+            agents_dir = Path(project_path) / ".claude" / "agents"
             if agents_dir.is_dir():
                 for f in agents_dir.iterdir():
                     if f.is_file() and f.suffix == ".md":
