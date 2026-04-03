@@ -397,7 +397,7 @@ def get_dir_fingerprint():
     try:
         user_agents_dir = CLAUDE_DIR / "agents"
         if user_agents_dir.is_dir():
-            for f in user_agents_dir.iterdir():
+            for f in sorted(user_agents_dir.iterdir()):
                 if f.is_file() and f.suffix == ".md":
                     try:
                         parts.append(f"{f}:{f.stat().st_mtime}")
@@ -413,7 +413,7 @@ def get_dir_fingerprint():
             project_path = dirname_to_path(project_dir.name)
             agents_dir = Path(project_path) / ".claude" / "agents"
             if agents_dir.is_dir():
-                for f in agents_dir.iterdir():
+                for f in sorted(agents_dir.iterdir()):
                     if f.is_file() and f.suffix == ".md":
                         try:
                             parts.append(f"{f}:{f.stat().st_mtime}")
