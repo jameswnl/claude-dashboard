@@ -1145,7 +1145,7 @@ function renderAgents(query) {
 
   // User agents
   if (userCount > 0) {
-    const filtered = hasQuery ? userAgents.filter(a => searchMatch(a.name, q) || searchMatch(a.description || '', q) || searchMatch(a.body || '', q) || searchMatch(a.model || '', q)) : userAgents;
+    const filtered = hasQuery ? userAgents.filter(a => searchMatch(a.name, q) || searchMatch(a.description || '', q) || searchMatch((a.body || a.content || ''), q) || searchMatch(a.model || '', q)) : userAgents;
     if (filtered.length > 0) {
       sectionsHtml += '<div class="skills-section" id="agents-user"><div class="skills-section-title">User Agents <span style="color:var(--text-dim);font-size:13px;font-weight:400">(' + userCount + ')</span></div><div class="skills-group expanded"><div class="skills-group-body" style="display:block">' + filtered.map(a => renderAgentItem(a, q)).join('') + '</div></div></div>';
     }
@@ -1155,7 +1155,7 @@ function renderAgents(query) {
   if (projectAgents.length > 0) {
     let projectsHtml = '';
     projectAgents.forEach(p => {
-      const filtered = hasQuery ? p.agents.filter(a => searchMatch(a.name, q) || searchMatch(p.name, q) || searchMatch(a.description || '', q) || searchMatch(a.body || '', q)) : p.agents;
+      const filtered = hasQuery ? p.agents.filter(a => searchMatch(a.name, q) || searchMatch(p.name, q) || searchMatch(a.description || '', q) || searchMatch((a.body || a.content || ''), q)) : p.agents;
       if (filtered.length > 0) {
         projectsHtml += '<div class="skills-group"><div class="skills-group-header"><span>' + highlightText(p.name, q) + '</span><span class="skills-group-count">' + p.agents.length + ' agent' + (p.agents.length !== 1 ? 's' : '') + '</span></div><div class="skills-group-body">' + filtered.map(a => renderAgentItem(a, q)).join('') + '</div></div>';
       }

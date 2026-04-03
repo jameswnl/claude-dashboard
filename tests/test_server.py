@@ -390,7 +390,7 @@ def test_dashboard_state(tmp_path, monkeypatch):
     (proj / "s.jsonl").write_text(json.dumps(d))
     s.refresh()
 
-    data_json, skills_json, agents_json, mcp_json, version = s.get()
+    data_json, _skills_json, _agents_json, _mcp_json, version = s.get()
     assert version == 2
     data = json.loads(data_json)
     assert len(data) == 1
@@ -1869,7 +1869,7 @@ def test_dashboard_state_includes_agents(tmp_path, monkeypatch):
     import claude_dashboard.server as mod
     monkeypatch.setattr(mod, "state", None)
     s = get_state()
-    data_json, skills_json, agents_json, mcp_json, version = s.get()
+    _data_json, _skills_json, agents_json, _mcp_json, _version = s.get()
     agents = json.loads(agents_json)
     assert "user" in agents
     assert "projects" in agents

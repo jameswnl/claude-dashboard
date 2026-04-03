@@ -203,7 +203,7 @@ def _read_agent_file(filepath):
                             meta[key] = val
                 meta["body"] = body[:3000]
         return meta
-    except Exception:
+    except OSError:
         return None
 
 
@@ -391,6 +391,34 @@ def get_dir_fingerprint():
                     parts.append(f"{claude_md}:{claude_md.stat().st_mtime}")
                 except OSError:
                     pass
+    except Exception:
+        pass
+    # Track user-level agent files
+    try:
+        user_agents_dir = CLAUDE_DIR / "agents"
+        if user_agents_dir.is_dir():
+            for f in user_agents_dir.iterdir():
+                if f.is_file() and f.suffix == ".md":
+                    try:
+                        parts.append(f"{f}:{f.stat().st_mtime}")
+                    except OSError:
+                        pass
+    except Exception:
+        pass
+    # Track project-level agent files
+    try:
+        for project_dir in sorted(PROJECTS_DIR.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            real_path = "/" + project_dir.name.lstrip("-").replace("-", "/")
+            agents_dir = Path(real_path) / ".claude" / "agents"
+            if agents_dir.is_dir():
+                for f in agents_dir.iterdir():
+                    if f.is_file() and f.suffix == ".md":
+                        try:
+                            parts.append(f"{f}:{f.stat().st_mtime}")
+                        except OSError:
+                            pass
     except Exception:
         pass
     return hashlib.md5("|".join(parts).encode()).hexdigest()
