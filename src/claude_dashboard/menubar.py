@@ -28,22 +28,29 @@ class DashboardApp(rumps.App):
         global SERVER_PROCESS
         if SERVER_PROCESS and SERVER_PROCESS.poll() is None:
             return True
-        # Check if something else is serving on the port
+        # Check if a claude_dashboard.server process is running
         try:
-            import urllib.request
-            urllib.request.urlopen(f"http://localhost:{PORT}/", timeout=1)
-            return True
+            result = subprocess.run(
+                ["pgrep", "-f", "claude_dashboard.server"],
+                capture_output=True, text=True,
+            )
+            return result.returncode == 0
         except Exception:
             return False
 
     def _update_status(self):
         running = self._is_running()
-        status = self.menu["Status: Stopped"] if "Status: Stopped" in self.menu else self.menu["Status: Running"]
-        new_title = "Status: Running" if running else "Status: Stopped"
-        status.title = new_title
+        for key in ("Status: Stopped", "Status: Running"):
+            if key in self.menu:
+                self.menu[key].title = "Status: Running" if running else "Status: Stopped"
+                break
         self.menu["Start Server"].set_callback(None if running else self.start_server)
         self.menu["Stop Server"].set_callback(self.stop_server if running else None)
         self.title = "C>_" if running else "C>."
+
+    @rumps.timer(5)
+    def _refresh_status(self, _):
+        self._update_status()
 
     @rumps.clicked("Open Dashboard")
     def open_dashboard(self, sender):
@@ -77,6 +84,19 @@ class DashboardApp(rumps.App):
                 SERVER_PROCESS.kill()
             SERVER_PROCESS = None
             stopped = True
+        else:
+            # Kill claude_dashboard.server processes
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", "claude_dashboard.server"],
+                    capture_output=True, text=True,
+                )
+                for pid in result.stdout.strip().splitlines():
+                    import os
+                    os.kill(int(pid), signal.SIGTERM)
+                    stopped = True
+            except Exception:
+                pass
         if stopped:
             rumps.notification("Claude Dashboard", "", "Server stopped")
         else:
