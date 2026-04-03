@@ -1,15 +1,47 @@
 #!/usr/bin/env python3
 """macOS menu bar app for Claude Code Dashboard."""
 
+import os
 import subprocess
 import signal
 import sys
 import webbrowser
+from pathlib import Path
 
 import rumps
 
 PORT = 8420
 SERVER_PROCESS = None
+PID_FILE = Path.home() / ".claude" / "dashboard.pid"
+
+
+def _write_pid(pid):
+    """Write server PID to file."""
+    try:
+        PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PID_FILE.write_text(str(pid))
+    except OSError:
+        pass
+
+
+def _read_pid():
+    """Read server PID from file. Returns int or None."""
+    try:
+        pid = int(PID_FILE.read_text().strip())
+        # Check if process is still alive
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError):
+        _clear_pid()
+        return None
+
+
+def _clear_pid():
+    """Remove PID file."""
+    try:
+        PID_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 class DashboardApp(rumps.App):
@@ -28,15 +60,8 @@ class DashboardApp(rumps.App):
         global SERVER_PROCESS
         if SERVER_PROCESS and SERVER_PROCESS.poll() is None:
             return True
-        # Check if a claude_dashboard.server process is running
-        try:
-            result = subprocess.run(
-                ["pgrep", "-f", "claude_dashboard.server"],
-                capture_output=True, text=True,
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
+        # Check PID file for externally started server
+        return _read_pid() is not None
 
     def _update_status(self):
         running = self._is_running()
@@ -69,6 +94,7 @@ class DashboardApp(rumps.App):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        _write_pid(SERVER_PROCESS.pid)
         rumps.notification("Claude Dashboard", "", f"Server started on port {PORT}")
         self._update_status()
 
@@ -76,27 +102,42 @@ class DashboardApp(rumps.App):
     def stop_server(self, sender):
         global SERVER_PROCESS
         stopped = False
+        pid_to_kill = None
+
         if SERVER_PROCESS and SERVER_PROCESS.poll() is None:
+            pid_to_kill = SERVER_PROCESS.pid
             SERVER_PROCESS.terminate()
             try:
                 SERVER_PROCESS.wait(timeout=5)
+                stopped = True
             except subprocess.TimeoutExpired:
                 SERVER_PROCESS.kill()
+                SERVER_PROCESS.wait(timeout=3)
+                stopped = True
             SERVER_PROCESS = None
-            stopped = True
         else:
-            # Kill claude_dashboard.server processes
-            try:
-                result = subprocess.run(
-                    ["pgrep", "-f", "claude_dashboard.server"],
-                    capture_output=True, text=True,
-                )
-                for pid in result.stdout.strip().splitlines():
-                    import os
-                    os.kill(int(pid), signal.SIGTERM)
+            # Try PID file for externally started server
+            pid_to_kill = _read_pid()
+            if pid_to_kill:
+                try:
+                    os.kill(pid_to_kill, signal.SIGTERM)
+                    # Wait for process to actually exit
+                    for _ in range(50):  # up to 5 seconds
+                        import time
+                        time.sleep(0.1)
+                        try:
+                            os.kill(pid_to_kill, 0)
+                        except OSError:
+                            stopped = True
+                            break
+                    if not stopped:
+                        os.kill(pid_to_kill, signal.SIGKILL)
+                        stopped = True
+                except OSError:
+                    # Process already gone
                     stopped = True
-            except Exception:
-                pass
+
+        _clear_pid()
         if stopped:
             rumps.notification("Claude Dashboard", "", "Server stopped")
         else:
