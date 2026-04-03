@@ -4,12 +4,13 @@
 ![Coverage](https://raw.githubusercontent.com/jameswnl/claude-dashboard/main/coverage.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A visual dashboard for browsing Claude Code projects, sessions, memory files, CLAUDE.md configs, skills, and MCP servers.
+A visual dashboard for browsing Claude Code projects, sessions, memory files, CLAUDE.md configs, skills, agents, and MCP servers.
 
 Scans `~/.claude/projects/` and presents everything in a searchable web UI.
 
 ![Projects](./docs/projects.png)
 ![Skills](./docs/skills.png)
+![Agents](./docs/agents.png)
 ![MCP Servers](./docs/mcp-servers.png)
 
 ## Features
@@ -18,6 +19,7 @@ Scans `~/.claude/projects/` and presents everything in a searchable web UI.
 - Expand projects to see session history and first messages
 - View memory files and CLAUDE.md per project
 - Browse skills/commands from user, project, and plugin sources
+- Browse custom agents with metadata (model, color, memory scope)
 - View MCP server configurations (user-level and per-project, with secrets masked)
 - Full-text search with case-sensitive and full-word match options
 - Auto-highlights search matches

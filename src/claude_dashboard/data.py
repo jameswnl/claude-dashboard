@@ -183,6 +183,75 @@ def collect_all_skills():
     return result
 
 
+def _read_agent_file(filepath):
+    """Read an agent .md file and return its metadata from YAML frontmatter."""
+    try:
+        content = filepath.read_text(errors="replace")[:5000]
+        meta = {"name": filepath.stem, "content": content}
+        # Parse YAML frontmatter
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                frontmatter = parts[1].strip()
+                body = parts[2].strip()
+                for line in frontmatter.splitlines():
+                    if ":" in line:
+                        key, _, val = line.partition(":")
+                        key = key.strip()
+                        val = val.strip().strip('"').strip("'")
+                        if key in ("name", "description", "model", "color", "memory"):
+                            meta[key] = val
+                meta["body"] = body[:3000]
+        return meta
+    except OSError:
+        return None
+
+
+def _extract_agents_from_dir(agents_dir):
+    """Extract agent files from a directory."""
+    agents = []
+    if not agents_dir.is_dir():
+        return agents
+    for f in sorted(agents_dir.iterdir()):
+        if f.is_file() and f.suffix == ".md":
+            agent = _read_agent_file(f)
+            if agent:
+                agents.append(agent)
+    return agents
+
+
+def collect_all_agents():
+    """Collect agents from user-level and project-level sources."""
+    result = {"user": [], "projects": []}
+
+    # User-level agents
+    user_agents = CLAUDE_DIR / "agents"
+    result["user"] = _extract_agents_from_dir(user_agents)
+
+    # Project-level agents
+    if PROJECTS_DIR.is_dir():
+        seen = set()
+        for project_dir in sorted(PROJECTS_DIR.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            project_path = dirname_to_path(project_dir.name)
+            agents_dir = Path(project_path) / ".claude" / "agents"
+            # Skip if same as user-level agents (e.g. home dir project)
+            if agents_dir.resolve() == user_agents.resolve():
+                continue
+            if agents_dir.is_dir() and project_path not in seen:
+                seen.add(project_path)
+                agents = _extract_agents_from_dir(agents_dir)
+                if agents:
+                    result["projects"].append({
+                        "name": project_display_name(project_dir.name),
+                        "dirname": project_dir.name,
+                        "agents": agents,
+                    })
+
+    return result
+
+
 _SECRET_KEYS = {"authorization", "token", "secret", "key", "password", "cookie", "api-key", "apikey"}
 
 
@@ -322,6 +391,34 @@ def get_dir_fingerprint():
                     parts.append(f"{claude_md}:{claude_md.stat().st_mtime}")
                 except OSError:
                     pass
+    except Exception:
+        pass
+    # Track user-level agent files
+    try:
+        user_agents_dir = CLAUDE_DIR / "agents"
+        if user_agents_dir.is_dir():
+            for f in sorted(user_agents_dir.iterdir()):
+                if f.is_file() and f.suffix == ".md":
+                    try:
+                        parts.append(f"{f}:{f.stat().st_mtime}")
+                    except OSError:
+                        pass
+    except Exception:
+        pass
+    # Track project-level agent files
+    try:
+        for project_dir in sorted(PROJECTS_DIR.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            project_path = dirname_to_path(project_dir.name)
+            agents_dir = Path(project_path) / ".claude" / "agents"
+            if agents_dir.is_dir():
+                for f in sorted(agents_dir.iterdir()):
+                    if f.is_file() and f.suffix == ".md":
+                        try:
+                            parts.append(f"{f}:{f.stat().st_mtime}")
+                        except OSError:
+                            pass
     except Exception:
         pass
     return hashlib.md5("|".join(parts).encode()).hexdigest()

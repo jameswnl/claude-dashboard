@@ -12,12 +12,15 @@ from claude_dashboard.server import (
     watcher_thread,
 )
 from claude_dashboard.data import (
+    _extract_agents_from_dir,
     _extract_commands_from_dir,
     _extract_plugin_meta,
     _is_secret_header,
     _mask_value,
+    _read_agent_file,
     _read_mcp_servers,
     _read_skill_file,
+    collect_all_agents,
     collect_all_skills,
     collect_data,
     collect_mcp_servers,
@@ -375,7 +378,7 @@ def test_collect_data_includes_memory(tmp_path, monkeypatch):
 def test_dashboard_state(tmp_path, monkeypatch):
     monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
     s = DashboardState()
-    data_json, skills_json, mcp_json, version = s.get()
+    data_json, _skills_json, _agents_json, _mcp_json, version = s.get()
     assert version == 1
     assert json.loads(data_json) == []
 
@@ -387,7 +390,7 @@ def test_dashboard_state(tmp_path, monkeypatch):
     (proj / "s.jsonl").write_text(json.dumps(d))
     s.refresh()
 
-    data_json, skills_json, mcp_json, version = s.get()
+    data_json, _skills_json, _agents_json, _mcp_json, version = s.get()
     assert version == 2
     data = json.loads(data_json)
     assert len(data) == 1
@@ -1787,6 +1790,89 @@ def test_get_html_light_theme_card_shadows():
     html = get_html()
     assert "html.light .project-card" in html
     assert "box-shadow" in html
+
+
+# --- Agents ---
+
+def test_read_agent_file(tmp_path):
+    agent_file = tmp_path / "my-agent.md"
+    agent_file.write_text("---\nname: my-agent\ndescription: Does things\nmodel: sonnet\ncolor: blue\nmemory: user\n---\nYou are an agent.")
+    result = _read_agent_file(agent_file)
+    assert result["name"] == "my-agent"
+    assert result["description"] == "Does things"
+    assert result["model"] == "sonnet"
+    assert result["color"] == "blue"
+    assert result["memory"] == "user"
+    assert result["body"] == "You are an agent."
+
+
+def test_read_agent_file_no_frontmatter(tmp_path):
+    agent_file = tmp_path / "simple.md"
+    agent_file.write_text("Just a prompt with no frontmatter.")
+    result = _read_agent_file(agent_file)
+    assert result["name"] == "simple"
+    assert result["content"] == "Just a prompt with no frontmatter."
+    assert "model" not in result
+
+
+def test_extract_agents_from_dir(tmp_path):
+    (tmp_path / "agent-a.md").write_text("---\nname: agent-a\nmodel: opus\n---\nPrompt A")
+    (tmp_path / "agent-b.md").write_text("---\nname: agent-b\nmodel: haiku\n---\nPrompt B")
+    (tmp_path / "not-an-agent.txt").write_text("ignored")
+    result = _extract_agents_from_dir(tmp_path)
+    assert len(result) == 2
+    names = [a["name"] for a in result]
+    assert "agent-a" in names
+    assert "agent-b" in names
+
+
+def test_extract_agents_from_dir_empty(tmp_path):
+    assert _extract_agents_from_dir(tmp_path) == []
+
+
+def test_extract_agents_from_dir_nonexistent(tmp_path):
+    assert _extract_agents_from_dir(tmp_path / "nope") == []
+
+
+def test_collect_all_agents_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", tmp_path / "claude")
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_all_agents()
+    assert result["user"] == []
+    assert result["projects"] == []
+
+
+def test_collect_all_agents_with_user_agents(tmp_path, monkeypatch):
+    claude_dir = tmp_path / "claude"
+    agents_dir = claude_dir / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "my-agent.md").write_text("---\nname: my-agent\nmodel: sonnet\n---\nDo stuff")
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", claude_dir)
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path / "projects")
+    result = collect_all_agents()
+    assert len(result["user"]) == 1
+    assert result["user"][0]["name"] == "my-agent"
+    assert result["user"][0]["model"] == "sonnet"
+
+
+def test_get_html_has_agents_view():
+    html = get_html()
+    assert "view-agents" in html
+    assert "agents-view" in html
+    assert "agents-content" in html
+    assert "renderAgents" in html
+
+
+def test_dashboard_state_includes_agents(tmp_path, monkeypatch):
+    monkeypatch.setattr("claude_dashboard.data.PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr("claude_dashboard.data.CLAUDE_DIR", tmp_path / "claude")
+    import claude_dashboard.server as mod
+    monkeypatch.setattr(mod, "state", None)
+    s = get_state()
+    _data_json, _skills_json, agents_json, _mcp_json, _version = s.get()
+    agents = json.loads(agents_json)
+    assert "user" in agents
+    assert "projects" in agents
 
 
 # --- Host and Origin validation tests ---
