@@ -12,7 +12,7 @@ import rumps
 
 PORT = 8420
 SERVER_PROCESS = None
-PID_FILE = Path.home() / ".claude" / "dashboard.pid"
+PID_FILE = Path.home() / ".claude" / f"dashboard-{PORT}.pid"
 
 
 def _write_pid(pid):

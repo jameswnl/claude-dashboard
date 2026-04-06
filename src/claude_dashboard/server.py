@@ -276,7 +276,7 @@ def main():
 
     # Write PID file for menubar app detection
     import os
-    pid_file = Path.home() / ".claude" / "dashboard.pid"
+    pid_file = Path.home() / ".claude" / f"dashboard-{port}.pid"
     try:
         pid_file.parent.mkdir(parents=True, exist_ok=True)
         pid_file.write_text(str(os.getpid()))
