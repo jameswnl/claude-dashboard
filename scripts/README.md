@@ -24,3 +24,23 @@ Opens your browser automatically. The token URL is also saved to `/tmp/mock_dash
 | **MCP Servers** | 4 user-level servers (github, slack, filesystem, jira) with masked secrets |
 
 All data is created in a temp directory and cleaned up on exit.
+
+## install_menubar_app.sh
+
+Installs the Claude Dashboard menubar app to `/Applications` on macOS. The app shows a `C>_` icon in the menu bar for starting/stopping the dashboard server and opening it in your browser.
+
+### Usage
+
+```bash
+./scripts/install_menubar_app.sh
+```
+
+### What it does
+
+1. Installs `claude-dashboard` with the `menubar` extra (uses `uv` if available, falls back to `pip`)
+2. Creates a `.app` bundle at `/Applications/Claude Dashboard.app`
+3. The app runs as a menubar-only icon (no Dock icon)
+
+### Start at login
+
+System Settings → General → Login Items → add "Claude Dashboard"
