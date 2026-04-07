@@ -274,6 +274,15 @@ def main():
     print(f"Watching {_data.PROJECTS_DIR} for changes (every {POLL_INTERVAL}s)")
     print("Press Ctrl+C to stop\n")
 
+    # Write PID file for menubar app detection
+    import os
+    pid_file = Path.home() / ".claude" / f"dashboard-{port}.pid"
+    try:
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(str(os.getpid()))
+    except OSError:
+        pass
+
     try:
         import webbrowser
         webbrowser.open(dashboard_url)
@@ -285,6 +294,11 @@ def main():
     except KeyboardInterrupt:
         print("\nStopped.")
         server.server_close()
+    finally:
+        try:
+            pid_file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":

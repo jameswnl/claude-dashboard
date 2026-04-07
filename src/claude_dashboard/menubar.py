@@ -1,15 +1,38 @@
 #!/usr/bin/env python3
 """macOS menu bar app for Claude Code Dashboard."""
 
+import os
 import subprocess
 import signal
 import sys
 import webbrowser
+from pathlib import Path
 
 import rumps
 
 PORT = 8420
 SERVER_PROCESS = None
+PID_FILE = Path.home() / ".claude" / f"dashboard-{PORT}.pid"
+
+
+def _read_pid():
+    """Read server PID from file. Returns int or None."""
+    try:
+        pid = int(PID_FILE.read_text().strip())
+        # Check if process is still alive
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError):
+        _clear_pid()
+        return None
+
+
+def _clear_pid():
+    """Remove PID file."""
+    try:
+        PID_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 class DashboardApp(rumps.App):
@@ -28,22 +51,22 @@ class DashboardApp(rumps.App):
         global SERVER_PROCESS
         if SERVER_PROCESS and SERVER_PROCESS.poll() is None:
             return True
-        # Check if something else is serving on the port
-        try:
-            import urllib.request
-            urllib.request.urlopen(f"http://localhost:{PORT}/", timeout=1)
-            return True
-        except Exception:
-            return False
+        # Check PID file for externally started server
+        return _read_pid() is not None
 
     def _update_status(self):
         running = self._is_running()
-        status = self.menu["Status: Stopped"] if "Status: Stopped" in self.menu else self.menu["Status: Running"]
-        new_title = "Status: Running" if running else "Status: Stopped"
-        status.title = new_title
+        for key in ("Status: Stopped", "Status: Running"):
+            if key in self.menu:
+                self.menu[key].title = "Status: Running" if running else "Status: Stopped"
+                break
         self.menu["Start Server"].set_callback(None if running else self.start_server)
         self.menu["Stop Server"].set_callback(self.stop_server if running else None)
         self.title = "C>_" if running else "C>."
+
+    @rumps.timer(5)
+    def _refresh_status(self, _):
+        self._update_status()
 
     @rumps.clicked("Open Dashboard")
     def open_dashboard(self, sender):
@@ -69,14 +92,42 @@ class DashboardApp(rumps.App):
     def stop_server(self, sender):
         global SERVER_PROCESS
         stopped = False
+        pid_to_kill = None
+
         if SERVER_PROCESS and SERVER_PROCESS.poll() is None:
+            pid_to_kill = SERVER_PROCESS.pid
             SERVER_PROCESS.terminate()
             try:
                 SERVER_PROCESS.wait(timeout=5)
+                stopped = True
             except subprocess.TimeoutExpired:
                 SERVER_PROCESS.kill()
+                SERVER_PROCESS.wait(timeout=3)
+                stopped = True
             SERVER_PROCESS = None
-            stopped = True
+        else:
+            # Try PID file for externally started server
+            pid_to_kill = _read_pid()
+            if pid_to_kill:
+                try:
+                    os.kill(pid_to_kill, signal.SIGTERM)
+                    # Wait for process to actually exit
+                    for _ in range(50):  # up to 5 seconds
+                        import time
+                        time.sleep(0.1)
+                        try:
+                            os.kill(pid_to_kill, 0)
+                        except OSError:
+                            stopped = True
+                            break
+                    if not stopped:
+                        os.kill(pid_to_kill, signal.SIGKILL)
+                        stopped = True
+                except OSError:
+                    # Process already gone
+                    stopped = True
+
+        _clear_pid()
         if stopped:
             rumps.notification("Claude Dashboard", "", "Server stopped")
         else:
