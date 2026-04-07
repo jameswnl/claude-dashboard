@@ -15,15 +15,6 @@ SERVER_PROCESS = None
 PID_FILE = Path.home() / ".claude" / f"dashboard-{PORT}.pid"
 
 
-def _write_pid(pid):
-    """Write server PID to file."""
-    try:
-        PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-        PID_FILE.write_text(str(pid))
-    except OSError:
-        pass
-
-
 def _read_pid():
     """Read server PID from file. Returns int or None."""
     try:
@@ -94,7 +85,6 @@ class DashboardApp(rumps.App):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        _write_pid(SERVER_PROCESS.pid)
         rumps.notification("Claude Dashboard", "", f"Server started on port {PORT}")
         self._update_status()
 
