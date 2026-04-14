@@ -1,8 +1,10 @@
 """Utility functions for path resolution, date formatting, and terminal launch."""
 
 import json
+import os
 import shlex
 import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -87,37 +89,18 @@ def open_terminal_with_session(session_id, dirname):
         # Path may have hyphens that were ambiguously encoded; resume without cd
         cmd = f"claude --resume {shlex.quote(session_id)}"
 
-    # Try iTerm2 first, fall back to Terminal.app
-    iterm_script = f'''
-        tell application "iTerm"
-            activate
-            set newWindow to (create window with default profile)
-            tell current session of newWindow
-                write text {json.dumps(cmd)}
-            end tell
-        end tell
-    '''
-    terminal_script = f'''
-        tell application "Terminal"
-            activate
-            do script {json.dumps(cmd)}
-        end tell
-    '''
-
+    # Use a .command file — macOS opens these in a new terminal window natively.
+    # This avoids AppleScript Automation permission issues that cause silent failures
+    # when osascript is invoked from a background server process.
     try:
-        subprocess.run(
-            ["osascript", "-e", iterm_script],
-            capture_output=True, timeout=5
-        )
-        return {"ok": True}
-    except Exception:
-        pass
-
-    try:
-        subprocess.run(
-            ["osascript", "-e", terminal_script],
-            capture_output=True, timeout=5
-        )
+        fd, script_path = tempfile.mkstemp(suffix=".command")
+        with os.fdopen(fd, "w") as f:
+            f.write("#!/bin/bash\n")
+            f.write(f"{cmd}\n")
+            # Clean up the temp file after the command finishes
+            f.write(f"rm -f {shlex.quote(script_path)}\n")
+        os.chmod(script_path, 0o755)
+        subprocess.run(["open", "-a", "iTerm", script_path], capture_output=True, timeout=5)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}

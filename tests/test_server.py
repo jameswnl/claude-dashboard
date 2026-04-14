@@ -485,23 +485,27 @@ def test_dirname_to_path_probes_filesystem(tmp_path, monkeypatch):
 
 def test_open_terminal_with_session_nonexistent_dir(monkeypatch):
     """When directory doesn't exist, should still return ok (runs without cd)."""
-    # Mock subprocess.run to capture the call
-    calls = []
+    import subprocess as sp
+    opened_files = []
     def mock_run(*args, **kwargs):
-        calls.append(args)
-        raise Exception("no osascript in test")
+        opened_files.append(args)
+        return sp.CompletedProcess(args=args, returncode=0)
     monkeypatch.setattr("claude_dashboard.utils.subprocess.run", mock_run)
     result = open_terminal_with_session("test-session-id", "-nonexistent-path")
-    # Should have tried both iTerm and Terminal, both failed
-    assert result["ok"] is False
-    assert "error" in result
-    assert len(calls) == 2  # tried iTerm2 and Terminal
+    assert result["ok"] is True
+    assert len(opened_files) == 1
+    # Should use 'open' with a .command file
+    assert opened_files[0][0][0] == "open"
+    assert opened_files[0][0][1:3] == ["-a", "iTerm"]
+    assert opened_files[0][0][3].endswith(".command")
 
 
 def test_open_terminal_with_session_success(tmp_path, monkeypatch):
-    """When osascript succeeds, should return ok."""
+    """When open succeeds, should return ok and create a .command script."""
     import subprocess as sp
+    opened_files = []
     def mock_run(*args, **kwargs):
+        opened_files.append(args[0])
         return sp.CompletedProcess(args=args, returncode=0)
     monkeypatch.setattr("claude_dashboard.utils.subprocess.run", mock_run)
     # Use a dirname that resolves to tmp_path
@@ -509,6 +513,16 @@ def test_open_terminal_with_session_success(tmp_path, monkeypatch):
     dirname = "-" + "-".join(parts)
     result = open_terminal_with_session("test-session", dirname)
     assert result["ok"] is True
+    assert len(opened_files) == 1
+    # Verify the .command file was created with correct content
+    script_path = opened_files[0][3]
+    assert script_path.endswith(".command")
+    content = Path(script_path).read_text()
+    assert "claude --resume" in content
+    assert "test-session" in content
+    assert str(tmp_path) in content
+    # Clean up
+    Path(script_path).unlink(missing_ok=True)
 
 
 # --- POST /api/refresh ---
@@ -973,22 +987,17 @@ def test_read_claude_md_exception(tmp_path, monkeypatch):
     assert result is None
 
 
-# utils.py: open_terminal_with_session - iTerm fails, Terminal succeeds (line 121)
-def test_open_terminal_iterm_fails_terminal_succeeds(tmp_path, monkeypatch):
-    """When iTerm2 fails but Terminal.app succeeds, return ok."""
-    import subprocess as sp
-    call_count = [0]
+# utils.py: open_terminal_with_session - open command fails
+def test_open_terminal_open_fails(tmp_path, monkeypatch):
+    """When open command fails, return error."""
     def mock_run(*args, **kwargs):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            raise Exception("iTerm not found")
-        return sp.CompletedProcess(args=args, returncode=0)
+        raise Exception("open failed")
     monkeypatch.setattr("claude_dashboard.utils.subprocess.run", mock_run)
     parts = str(tmp_path).lstrip("/").split("/")
     dirname = "-" + "-".join(parts)
     result = open_terminal_with_session("test-session", dirname)
-    assert result["ok"] is True
-    assert call_count[0] == 2
+    assert result["ok"] is False
+    assert "error" in result
 
 
 # utils.py: dirname_to_path with empty string
